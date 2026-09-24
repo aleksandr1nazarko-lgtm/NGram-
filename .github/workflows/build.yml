@@ -9,8 +9,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
+
+      - name: Clone submodules
+        run: |
+          git clone --depth=1 https://github.com/tdlib/td.git TMessagesProj/jni/td
+          git clone --depth=1 https://github.com/dkaraush/tlottie.git TMessagesProj/jni/tlottie
+          git clone --depth=1 https://github.com/google/boringssl.git TMessagesProj/jni/third_party/boringssl
+          git clone --depth=1 https://github.com/videolan/dav1d.git TMessagesProj/jni/third_party/dav1d
+          git clone --depth=1 https://github.com/FFmpeg/FFmpeg.git TMessagesProj/jni/third_party/ffmpeg
+          git clone --depth=1 https://github.com/webmproject/libvpx.git TMessagesProj/jni/third_party/libvpx
+          git clone --depth=1 https://chromium.googlesource.com/libyuv/libyuv TMessagesProj/jni/third_party/libyuv
+          git clone --depth=1 https://github.com/cisco/openh264.git TMessagesProj/jni/third_party/openh264
+          git clone --depth=1 https://github.com/xiph/ogg.git TMessagesProj/jni/third_party/xiph/ogg
+          git clone --depth=1 https://github.com/xiph/opus.git TMessagesProj/jni/third_party/xiph/opus
+          git clone --depth=1 https://github.com/xiph/opusfile.git TMessagesProj/jni/third_party/xiph/opusfile
+          git clone --depth=1 https://github.com/dkaraush/jlatexmath-android.git TMessagesProj/lib/jlatexmath
+          git clone --depth=1 https://github.com/Arseny271/media.git TMessagesProj_Modules/media
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
