@@ -35,7 +35,7 @@
     <string name="YourCode">Phone verification</string>
     <string name="SentSmsCode">We’ve sent an SMS with an activation code to your phone **%1$s**.</string>
     <string name="SentAppCode">We\'ve sent the code to the **NGram** app on your other device.</string>
-    
+    <string name="SentAppCodeWithPhone">We\'ve sent the code to the **NGram** app for %1$s on your other device.</string>
     <string name="SentAppCodeTitle">Check your NGram messages</string>
     <string name="SentFragmentCode">Get the code for %1$s in the Anonymous Numbers section on Fragment.</string>
     <string name="SentSmsCodeTitle">Enter code</string>
