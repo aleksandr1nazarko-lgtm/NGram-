@@ -7,7 +7,64 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:123456789012:android:aaaaaaaaaaaaaaaa",
+        "mobilesdk_app_id": "1:123456789012:android:aaaaaaaaaaaaaaa1",
+        "android_client_info": {
+          "package_name": "com.neacheer.messenger"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyFAKEKEYFAKEKEYFAKEKEYFAKEKEY123"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:123456789012:android:aaaaaaaaaaaaaaa2",
+        "android_client_info": {
+          "package_name": "com.neacheer.messenger.afat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyFAKEKEYFAKEKEYFAKEKEYFAKEKEY123"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:123456789012:android:aaaaaaaaaaaaaaa3",
+        "android_client_info": {
+          "package_name": "com.neacheer.messenger.beta"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyFAKEKEYFAKEKEYFAKEKEYFAKEKEY123"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:123456789012:android:aaaaaaaaaaaaaaa4",
         "android_client_info": {
           "package_name": "org.telegram.messenger"
         }
@@ -26,9 +83,9 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:123456789012:android:bbbbbbbbbbbbbbbb",
+        "mobilesdk_app_id": "1:123456789012:android:aaaaaaaaaaaaaaa5",
         "android_client_info": {
-          "package_name": "com.neacheer.messenger"
+          "package_name": "org.telegram.messenger.beta"
         }
       },
       "oauth_client": [],
