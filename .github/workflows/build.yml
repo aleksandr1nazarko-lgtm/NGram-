@@ -95,8 +95,8 @@ jobs:
           rm -rf .gradle
           df -h
 
-      - name: Build Debug APK
-        run: ./gradlew TMessagesProj_App:assembleAfatDebug --no-daemon --stacktrace
+      - name: Build Release APK
+        run: ./gradlew TMessagesProj_App:assembleAfatRelease --no-daemon --stacktrace
 
       - name: Find APK location
         if: always()
@@ -108,6 +108,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NGram-APK-Debug
+          name: NGram-APK
           path: TMessagesProj_App/build/outputs/apk/**/*.apk
           if-no-files-found: warn
