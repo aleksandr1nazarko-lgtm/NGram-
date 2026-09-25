@@ -108,11 +108,9 @@ jobs:
           ls -la TMessagesProj_App/build/outputs/apk/ 2>/dev/null || echo "apk dir not found"
 
       - name: Upload APK
-        if: success()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: NGram-APK
-          path: |
-            TMessagesProj_App/build/outputs/apk/release/*.apk
-            TMessagesProj_App/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          path: TMessagesProj_App/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
