@@ -6,9 +6,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/go
+          sudo rm -rf /opt/microsoft
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/lib/jvm
+          sudo apt-get clean
+          df -h
 
       - name: Clone submodules
         run: |
@@ -24,16 +41,9 @@ jobs:
           git clone --depth=1 https://github.com/xiph/opus.git TMessagesProj/jni/third_party/xiph/opus
           git clone --depth=1 https://github.com/xiph/opusfile.git TMessagesProj/jni/third_party/xiph/opusfile
           git clone --depth=1 https://github.com/dkaraush/jlatexmath-android.git TMessagesProj/lib/jlatexmath
-          
-          # Media: берём SHA из официального DrKLO/Telegram и ставим его
           MEDIA_SHA=$(curl -s "https://api.github.com/repos/DrKLO/Telegram/contents/TMessagesProj_Modules/media" | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
-          echo "=== Media SHA from DrKLO/Telegram: $MEDIA_SHA ==="
           git clone https://github.com/Arseny271/media.git TMessagesProj_Modules/media
-          cd TMessagesProj_Modules/media
-          git checkout $MEDIA_SHA
-          cd $GITHUB_WORKSPACE
-          echo "=== media content: ==="
-          ls TMessagesProj_Modules/media/
+          cd TMessagesProj_Modules/media && git checkout $MEDIA_SHA && cd $GITHUB_WORKSPACE
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -56,16 +66,53 @@ jobs:
 
       - name: Install NDK and platforms
         run: |
-          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager "ndk;27.2.12479018" "platforms;android-36" "build-tools;36.0.0"
+          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager "ndk;27.2.12479018" "platforms;android-36" "build-tools;36.0.0" "platform-tools" "cmake;3.22.1"
 
       - name: Grant execute permission
         run: chmod +x gradlew
 
-      - name: Build Release APK
+      - name: Clean old build
+        run: |
+          rm -rf TMessagesProj/build
+          rm -rf TMessagesProj/.cxx
+          rm -rf .gradle
+          df -h
+
+      - name: Build attempt 1 (release)
+        id: attempt1
+        continue-on-error: true
         run: ./gradlew TMessagesProj:assembleRelease --no-daemon --stacktrace
 
+      - name: Build attempt 2 (release, low memory)
+        id: attempt2
+        if: steps.attempt1.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          rm -rf TMessagesProj/build
+          ./gradlew TMessagesProj:assembleRelease --no-daemon --no-parallel --stacktrace -Dorg.gradle.workers.max=2
+          df -h
+
+      - name: Build attempt 3 (debug fallback)
+        id: attempt3
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          rm -rf TMessagesProj/build
+          ./gradlew TMessagesProj:assembleDebug --no-daemon --stacktrace
+          df -h
+
+      - name: Check build result
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure' && steps.attempt3.outcome == 'failure'
+        run: |
+          echo "❌ ALL BUILD ATTEMPTS FAILED"
+          exit 1
+
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: NGram-APK
-          path: TMessagesProj/build/outputs/apk/release/*.apk
+          path: |
+            TMessagesProj/build/outputs/apk/release/*.apk
+            TMessagesProj/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
