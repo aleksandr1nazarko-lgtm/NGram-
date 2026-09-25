@@ -23,9 +23,27 @@ jobs:
           sudo rm -rf /usr/local/go
           sudo rm -rf /opt/microsoft
           sudo rm -rf /usr/local/.ghcup
-          sudo rm -rf /usr/lib/jvm
           sudo apt-get clean
           df -h
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-
+
+      - name: Cache CMake builds
+        uses: actions/cache@v4
+        with:
+          path: |
+            TMessagesProj/.cxx
+          key: cxx-${{ hashFiles('TMessagesProj/jni/**', 'TMessagesProj/CMakeLists.txt') }}
+          restore-keys: |
+            cxx-
 
       - name: Clone submodules
         run: |
@@ -74,45 +92,15 @@ jobs:
       - name: Clean old build
         run: |
           rm -rf TMessagesProj/build
-          rm -rf TMessagesProj/.cxx
           rm -rf .gradle
           df -h
 
-      - name: Build attempt 1 (release)
-        id: attempt1
-        continue-on-error: true
+      - name: Build Release APK
         run: ./gradlew TMessagesProj:assembleRelease --no-daemon --stacktrace
 
-      - name: Build attempt 2 (release, low memory)
-        id: attempt2
-        if: steps.attempt1.outcome == 'failure'
-        continue-on-error: true
-        run: |
-          rm -rf TMessagesProj/build
-          ./gradlew TMessagesProj:assembleRelease --no-daemon --no-parallel --stacktrace -Dorg.gradle.workers.max=2
-          df -h
-
-      - name: Build attempt 3 (debug fallback)
-        id: attempt3
-        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
-        continue-on-error: true
-        run: |
-          rm -rf TMessagesProj/build
-          ./gradlew TMessagesProj:assembleDebug --no-daemon --stacktrace
-          df -h
-
-      - name: Check build result
-        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure' && steps.attempt3.outcome == 'failure'
-        run: |
-          echo "❌ ALL BUILD ATTEMPTS FAILED"
-          exit 1
-
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: NGram-APK
-          path: |
-            TMessagesProj/build/outputs/apk/release/*.apk
-            TMessagesProj/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
+          path: TMessagesProj/build/outputs/apk/release/*.apk
+          if-no-files-found: error
