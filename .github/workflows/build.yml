@@ -91,16 +91,28 @@ jobs:
 
       - name: Clean old build
         run: |
-          rm -rf TMessagesProj/build
+          rm -rf TMessagesProj_App/build
           rm -rf .gradle
           df -h
 
       - name: Build Release APK
-        run: ./gradlew TMessagesProj:assembleRelease --no-daemon --stacktrace
+        run: ./gradlew TMessagesProj_App:assembleRelease --no-daemon --stacktrace
+
+      - name: Find APK location
+        if: always()
+        run: |
+          echo "=== Looking for APK files ==="
+          find . -name "*.apk" -type f 2>/dev/null || echo "No APK found"
+          echo "=== Contents of build outputs ==="
+          ls -la TMessagesProj_App/build/outputs/apk/release/ 2>/dev/null || echo "release dir not found"
+          ls -la TMessagesProj_App/build/outputs/apk/ 2>/dev/null || echo "apk dir not found"
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: NGram-APK
-          path: TMessagesProj/build/outputs/apk/release/*.apk
+          path: |
+            TMessagesProj_App/build/outputs/apk/release/*.apk
+            TMessagesProj_App/build/outputs/apk/debug/*.apk
           if-no-files-found: error
