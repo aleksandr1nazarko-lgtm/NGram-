@@ -95,22 +95,19 @@ jobs:
           rm -rf .gradle
           df -h
 
-      - name: Build Release APK
-        run: ./gradlew TMessagesProj_App:assembleRelease --no-daemon --stacktrace
+      - name: Build Debug APK
+        run: ./gradlew TMessagesProj_App:assembleAfatDebug --no-daemon --stacktrace
 
       - name: Find APK location
         if: always()
         run: |
           echo "=== Looking for APK files ==="
           find . -name "*.apk" -type f 2>/dev/null || echo "No APK found"
-          echo "=== Contents of build outputs ==="
-          ls -la TMessagesProj_App/build/outputs/apk/release/ 2>/dev/null || echo "release dir not found"
-          ls -la TMessagesProj_App/build/outputs/apk/ 2>/dev/null || echo "apk dir not found"
 
       - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NGram-APK
+          name: NGram-APK-Debug
           path: TMessagesProj_App/build/outputs/apk/**/*.apk
           if-no-files-found: warn
