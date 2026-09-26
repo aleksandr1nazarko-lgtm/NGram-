@@ -36,17 +36,9 @@ jobs:
           restore-keys: |
             gradle-
 
-      - name: Cache CMake builds
-        uses: actions/cache@v4
-        with:
-          path: |
-            TMessagesProj/.cxx
-          key: cxx-${{ hashFiles('TMessagesProj/jni/**', 'TMessagesProj/CMakeLists.txt') }}
-          restore-keys: |
-            cxx-
-
       - name: Clone submodules
         run: |
+          set -euo pipefail
           git clone --depth=1 https://github.com/tdlib/td.git TMessagesProj/jni/td
           git clone --depth=1 https://github.com/dkaraush/tlottie.git TMessagesProj/jni/tlottie
           git clone --depth=1 https://github.com/google/boringssl.git TMessagesProj/jni/third_party/boringssl
@@ -64,7 +56,7 @@ jobs:
           cd TMessagesProj_Modules/media && git checkout $MEDIA_SHA && cd $GITHUB_WORKSPACE
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -88,12 +80,6 @@ jobs:
 
       - name: Grant execute permission
         run: chmod +x gradlew
-
-      - name: Clean old build
-        run: |
-          rm -rf TMessagesProj_App/build
-          rm -rf .gradle
-          df -h
 
       - name: Build Release APK
         run: ./gradlew TMessagesProj_App:assembleAfatRelease --no-daemon --stacktrace
