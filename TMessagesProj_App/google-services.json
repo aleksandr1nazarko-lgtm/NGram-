@@ -23,6 +23,82 @@
           "other_platform_oauth_client": []
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:817942016106:android:ce0463ed0d9ecf6baf1a13",
+        "android_client_info": {
+          "package_name": "com.neacheer.messenger.afat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyADUw3i-42DTdddyTI_Mba-y59Cl17OrAk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:817942016106:android:ce0463ed0d9ecf6baf1a13",
+        "android_client_info": {
+          "package_name": "com.neacheer.messenger.beta"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyADUw3i-42DTdddyTI_Mba-y59Cl17OrAk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:817942016106:android:ce0463ed0d9ecf6baf1a13",
+        "android_client_info": {
+          "package_name": "org.telegram.messenger"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyADUw3i-42DTdddyTI_Mba-y59Cl17OrAk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:817942016106:android:ce0463ed0d9ecf6baf1a13",
+        "android_client_info": {
+          "package_name": "org.telegram.messenger.beta"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyADUw3i-42DTdddyTI_Mba-y59Cl17OrAk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
     }
   ],
   "configuration_version": "1"
