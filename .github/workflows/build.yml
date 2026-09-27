@@ -81,7 +81,59 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
+      # ================================================================
+      # ШАГ ПОИСКА ОГРАНИЧЕНИЙ АККАУНТОВ (стоит ДО сборки)
+      # ================================================================
+      - name: Find ALL account limit occurrences
+        run: |
+          echo "=================================================="
+          echo "🔍 ПОИСК ВСЕХ ОГРАНИЧЕНИЙ АККАУНТОВ"
+          echo "=================================================="
+          
+          echo ""
+          echo "--- 1. Все вхождения MAX_ACCOUNT (любые файлы) ---"
+          grep -RIn "MAX_ACCOUNT" . --exclude-dir=.git --exclude-dir=build --exclude-dir=.gradle || true
+          
+          echo ""
+          echo "--- 2. Все вхождения MAX_ACCOUNT_COUNT ---"
+          grep -RIn "MAX_ACCOUNT_COUNT" . --exclude-dir=.git --exclude-dir=build --exclude-dir=.gradle || true
+          
+          echo ""
+          echo "--- 3. Все вхождения MAX_ACCOUNT_DEFAULT_COUNT ---"
+          grep -RIn "MAX_ACCOUNT_DEFAULT_COUNT" . --exclude-dir=.git --exclude-dir=build --exclude-dir=.gradle || true
+          
+          echo ""
+          echo "--- 4. Метод getMaxAccountCount (жесткие проверки в UI) ---"
+          grep -RIn "getMaxAccountCount" . --exclude-dir=.git --exclude-dir=build --exclude-dir=.gradle || true
+          
+          echo ""
+          echo "--- 5. Массив AccountInstance[] (размер массива) ---"
+          grep -RIn "AccountInstance\[\]" . --exclude-dir=.git --exclude-dir=build --exclude-dir=.gradle || true
+          
+          echo ""
+          echo "--- 6. Поиск в нативных заголовках .h (JNI) ---"
+          find . -name "*.h" -path "*/jni/*" -exec grep -Hn "MAX_ACCOUNT" {} \; || true
+          
+          echo ""
+          echo "--- 7. Поиск в файлах Gradle / настроек ---"
+          grep -RIn "ACCOUNT" *.gradle gradle.properties 2>/dev/null || true
+          
+          echo ""
+          echo "=================================================="
+          echo "✅ Поиск завершен. Проверьте список файлов выше."
+          echo "=================================================="
+
+      # ================================================================
+      # ЧИСТАЯ СБОРКА (обязательно, чтобы сбросить кэш .so)
+      # ================================================================
+      - name: Clean Build (сброс кэша нативных библиотек)
+        run: ./gradlew clean
+
+      # ================================================================
+      # СБОРКА (continue-on-error, чтобы увидеть логи при краше)
+      # ================================================================
       - name: Build Release APK
+        continue-on-error: true
         run: ./gradlew TMessagesProj_App:assembleAfatRelease --no-daemon --stacktrace
 
       - name: Find APK location
