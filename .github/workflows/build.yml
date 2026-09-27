@@ -149,3 +149,34 @@ jobs:
           name: NGram-APK
           path: TMessagesProj_App/build/outputs/apk/**/*.apk
           if-no-files-found: warn
+- name: Enable KVM for emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run APK in emulator and capture crash log
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: arm64-v8a
+          profile: pixel_6
+          script: |
+            APK=$(find . -name "app.apk" -o -name "*.apk" | head -1)
+            echo "Installing $APK"
+            adb install -r "$APK"
+            adb logcat -c
+            adb shell monkey -p com.neacheer.messenger -c android.intent.category.LAUNCHER 1
+            echo "Waiting 25 seconds..."
+            sleep 25
+            echo "=== FULL LOGCAT ==="
+            adb logcat -d | grep -B5 -A80 "FATAL EXCEPTION\|AndroidRuntime" > crash_log.txt || true
+            cat crash_log.txt
+
+      - name: Upload crash log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-log
+          path: crash_log.txt
+          if-no-files-found: warn
