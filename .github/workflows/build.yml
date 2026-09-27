@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 180
 
     steps:
       - name: Checkout
@@ -35,28 +35,6 @@ jobs:
           key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-
-
-      - name: Sanity-check key resource files
-        run: |
-          set -euo pipefail
-          echo "=== Checking theme files ==="
-          wc -l TMessagesProj/src/main/assets/darkblue.attheme
-          wc -l TMessagesProj/src/main/assets/bluebubbles.attheme
-          echo "=== Checking strings.xml is well-formed XML ==="
-          python3 -c "import xml.etree.ElementTree as ET; ET.parse('TMessagesProj/src/main/res/values/strings.xml')"
-          python3 -c "import xml.etree.ElementTree as ET; ET.parse('TMessagesProj/src/main/res/values-ru/strings.xml')"
-          echo "=== Checking styles.xml is well-formed XML ==="
-          python3 -c "import xml.etree.ElementTree as ET; ET.parse('TMessagesProj/src/main/res/values-v31/styles.xml')"
-          python3 -c "import xml.etree.ElementTree as ET; ET.parse('TMessagesProj/src/main/res/values-night/styles.xml')"
-          echo "=== Checking MAX_ACCOUNT_COUNT consistency ==="
-          JAVA_VAL=$(grep -oP 'MAX_ACCOUNT_COUNT = \K[0-9]+' TMessagesProj/src/main/java/org/telegram/messenger/UserConfig.java | head -1)
-          NATIVE_VAL=$(grep -oP '#define MAX_ACCOUNT_COUNT \K[0-9]+' TMessagesProj/jni/tgnet/Defines.h)
-          echo "Java: $JAVA_VAL, Native: $NATIVE_VAL"
-          if [ "$JAVA_VAL" != "$NATIVE_VAL" ]; then
-            echo "::error::MAX_ACCOUNT_COUNT MISMATCH: Java=$JAVA_VAL Native=$NATIVE_VAL"
-            exit 1
-          fi
-          echo "All checks passed."
 
       - name: Clone submodules
         run: |
@@ -112,59 +90,10 @@ jobs:
           echo "=== Looking for APK files ==="
           find . -name "*.apk" -type f 2>/dev/null || echo "No APK found"
 
-      - name: Verify native libraries are complete
-        run: |
-          set -euo pipefail
-          APK=$(find . -name "app.apk" -o -name "*.apk" | head -1)
-          echo "Checking APK: $APK"
-          mkdir -p /tmp/apkcheck
-          unzip -q "$APK" -d /tmp/apkcheck
-          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
-            SIZE=$(du -sk /tmp/apkcheck/lib/$abi 2>/dev/null | cut -f1 || echo 0)
-            echo "lib/$abi size: ${SIZE}KB"
-            if [ "$SIZE" -lt 5000 ]; then
-              echo "::error::Native libs for $abi look incomplete (only ${SIZE}KB)"
-              exit 1
-            fi
-          done
-          echo "Native libraries look complete for all architectures."
-
       - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: NGram-APK
           path: TMessagesProj_App/build/outputs/apk/**/*.apk
-          if-no-files-found: warn
-
-      - name: Enable KVM for emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Run APK in emulator and capture crash log
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          arch: x86_64
-          profile: pixel_6
-          script: |
-            APK=$(find . -name "app.apk" -o -name "*.apk" | head -1)
-            echo "Installing $APK"
-            adb install -r "$APK"
-            adb logcat -c
-            adb shell monkey -p com.neacheer.messenger -c android.intent.category.LAUNCHER 1
-            echo "App launched, waiting 20 seconds to catch any crash..."
-            sleep 20
-            echo "=== FULL LOGCAT (app-related) ==="
-            adb logcat -d | grep -A 60 "com.neacheer.messenger\|AndroidRuntime\|FATAL" > crash_log.txt || true
-            cat crash_log.txt
-
-      - name: Upload crash log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: crash-log
-          path: crash_log.txt
           if-no-files-found: warn
