@@ -111,16 +111,10 @@ jobs:
           arch: x86_64
           profile: pixel_6
           script: |
-            echo "=== Все .apk файлы в проекте ==="
-            find . -name "*.apk" -type f
-            APK=$(find . -name "app.apk" -type f | head -1)
-            echo "Installing $APK"
-            adb install -r "$APK"
+            adb install -r ./TMessagesProj_App/build/outputs/apk/afat/release/app.apk
             adb logcat -c
             adb shell monkey -p com.neacheer.messenger -c android.intent.category.LAUNCHER 1
-            echo "Waiting 25 seconds..."
             sleep 25
-            echo "=== FULL LOGCAT ==="
             adb logcat -d | grep -B5 -A80 "FATAL EXCEPTION\|AndroidRuntime" > crash_log.txt || true
             cat crash_log.txt
 
