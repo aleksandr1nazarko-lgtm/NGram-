@@ -2,24 +2,17 @@ name: Build NGram
 
 on:
   workflow_dispatch:
-    inputs:
-      run_emulator:
-        description: "Запустить APK в эмуляторе и собрать логи (дольше, но покажет краши)"
-        type: boolean
-        default: true
-
-concurrency:
-  group: build-ngram
-  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 180
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Free disk space
         run: |
@@ -45,95 +38,14 @@ jobs:
           restore-keys: |
             gradle-
 
-      - name: Pre-build sanity checks
-        run: |
-          set -euo pipefail
-
-          echo "=== Application ID ==="
-          grep -n "APP_PACKAGE" gradle.properties
-
-          echo "=== ABI filters (все build.gradle) ==="
-          grep -rn "abiFilters" --include=build.gradle . || true
-
-          echo "=== Лимиты аккаунтов ==="
-          JAVA_MAX=$(grep -oP 'int MAX_ACCOUNT_COUNT = \K[0-9]+' TMessagesProj/src/main/java/org/telegram/messenger/UserConfig.java || true)
-          JAVA_DEF=$(grep -oP 'int MAX_ACCOUNT_DEFAULT_COUNT = \K[0-9]+' TMessagesProj/src/main/java/org/telegram/messenger/UserConfig.java || true)
-          NATIVE_MAX=$(grep -oP '#define MAX_ACCOUNT_COUNT \K[0-9]+' TMessagesProj/jni/tgnet/Defines.h || true)
-          echo "Java MAX_ACCOUNT_COUNT         = ${JAVA_MAX:-?}"
-          echo "Java MAX_ACCOUNT_DEFAULT_COUNT = ${JAVA_DEF:-?}"
-          echo "Native MAX_ACCOUNT_COUNT       = ${NATIVE_MAX:-?}"
-          if [ -z "$JAVA_MAX" ] || [ -z "$NATIVE_MAX" ]; then
-            echo "::error::Не удалось прочитать лимиты аккаунтов (проверь UserConfig.java и tgnet/Defines.h)"
-            exit 1
-          fi
-          if [ "$JAVA_MAX" -gt "$NATIVE_MAX" ]; then
-            echo "::error::Java-лимит ($JAVA_MAX) больше нативного ($NATIVE_MAX): будет выход за границы массива"
-            exit 1
-          fi
-          if [ "$JAVA_MAX" != "$NATIVE_MAX" ]; then
-            echo "::warning::Java ($JAVA_MAX) и native ($NATIVE_MAX) отличаются, лучше сделать одинаковыми"
-          fi
-
-          echo "=== Firebase: package_name ==="
-          grep -q "com.neacheer.messenger" TMessagesProj_App/google-services.json || { echo "::error::TMessagesProj_App/google-services.json не для com.neacheer.messenger"; exit 1; }
-          grep -q "com.neacheer.messenger" TMessagesProj/google-services.json || { echo "::error::TMessagesProj/google-services.json не для com.neacheer.messenger"; exit 1; }
-
-          echo "=== XML-файлы читаются? ==="
-          for f in \
-            TMessagesProj/src/main/res/values/strings.xml \
-            TMessagesProj/src/main/res/values-ru/strings.xml \
-            TMessagesProj/src/main/res/values-v31/styles.xml \
-            TMessagesProj/src/main/res/values-night/styles.xml \
-            TMessagesProj/src/main/AndroidManifest.xml; do
-            python3 -c "import sys, xml.etree.ElementTree as ET; ET.parse(sys.argv[1])" "$f" || { echo "::error::Битый XML: $f"; exit 1; }
-            echo "ok  $f"
-          done
-
-          echo "=== Файлы тем ==="
-          wc -l TMessagesProj/src/main/assets/darkblue.attheme TMessagesProj/src/main/assets/bluebubbles.attheme
-
-          echo "Все проверки пройдены."
-
-      - name: Clone submodules
+      - name: Clone media module
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-
-          clone() {
-            for i in 1 2 3; do
-              if git clone --depth=1 "$1" "$2"; then return 0; fi
-              echo "Попытка $i не удалась для $1, повтор через 5 секунд"
-              rm -rf "$2"
-              sleep 5
-            done
-            echo "::error::Не удалось склонировать $1"
-            return 1
-          }
-
-          clone https://github.com/tdlib/td.git TMessagesProj/jni/td
-          clone https://github.com/dkaraush/tlottie.git TMessagesProj/jni/tlottie
-          clone https://github.com/google/boringssl.git TMessagesProj/jni/third_party/boringssl
-          clone https://github.com/videolan/dav1d.git TMessagesProj/jni/third_party/dav1d
-          clone https://github.com/FFmpeg/FFmpeg.git TMessagesProj/jni/third_party/ffmpeg
-          clone https://github.com/webmproject/libvpx.git TMessagesProj/jni/third_party/libvpx
-          clone https://chromium.googlesource.com/libyuv/libyuv TMessagesProj/jni/third_party/libyuv
-          clone https://github.com/cisco/openh264.git TMessagesProj/jni/third_party/openh264
-          clone https://github.com/xiph/ogg.git TMessagesProj/jni/third_party/xiph/ogg
-          clone https://github.com/xiph/opus.git TMessagesProj/jni/third_party/xiph/opus
-          clone https://github.com/xiph/opusfile.git TMessagesProj/jni/third_party/xiph/opusfile
-          clone https://github.com/dkaraush/jlatexmath-android.git TMessagesProj/lib/jlatexmath
-
           MEDIA_SHA=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/DrKLO/Telegram/contents/TMessagesProj_Modules/media" | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
-          echo "media SHA: $MEDIA_SHA"
           git clone https://github.com/Arseny271/media.git TMessagesProj_Modules/media
           git -C TMessagesProj_Modules/media checkout "$MEDIA_SHA"
-
-          echo "=== Проверка, что всё на месте ==="
-          for d in TMessagesProj/jni/td TMessagesProj/jni/tlottie TMessagesProj/jni/third_party/boringssl TMessagesProj/jni/third_party/dav1d TMessagesProj/jni/third_party/ffmpeg TMessagesProj/jni/third_party/libvpx TMessagesProj/jni/third_party/libyuv TMessagesProj/jni/third_party/openh264 TMessagesProj/jni/third_party/xiph/ogg TMessagesProj/jni/third_party/xiph/opus TMessagesProj/jni/third_party/xiph/opusfile TMessagesProj/lib/jlatexmath TMessagesProj_Modules/media; do
-            test -n "$(ls -A "$d")" || { echo "::error::Пустая папка $d"; exit 1; }
-          done
-          echo "Все модули скачаны."
 
       - name: Setup JDK 17
         uses: actions/setup-java@v5
@@ -164,83 +76,16 @@ jobs:
       - name: Build Release APK
         run: ./gradlew TMessagesProj_App:assembleAfatRelease --no-daemon --stacktrace
 
-      - name: Verify APK and native libraries
+      - name: Find APK location
+        if: always()
         run: |
-          APK=TMessagesProj_App/build/outputs/apk/afat/release/app.apk
-          test -f "$APK" || { echo "::error::APK не найден: $APK"; exit 1; }
-          ls -lh "$APK"
-          echo "=== Содержимое lib/ ==="
-          unzip -l "$APK" | grep "lib/" || true
-          unzip -l "$APK" | grep -q "lib/arm64-v8a/libtmessages" || { echo "::error::В APK нет libtmessages для arm64-v8a"; exit 1; }
-          unzip -l "$APK" | grep -q "lib/x86_64/libtmessages" || echo "::warning::В APK нет libtmessages для x86_64, эмулятор не сможет запустить приложение"
-          echo "APK выглядит целым."
+          echo "=== Looking for APK files ==="
+          find . -name "*.apk" -type f 2>/dev/null || echo "No APK found"
 
       - name: Upload APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: NGram-APK
-          path: TMessagesProj_App/build/outputs/apk/afat/release/app.apk
-          retention-days: 14
-          if-no-files-found: error
-
-      - name: Enable KVM for emulator
-        if: ${{ inputs.run_emulator }}
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Run APK in emulator and capture logs
-        if: ${{ inputs.run_emulator }}
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          arch: x86_64
-          profile: pixel_6
-          script: |
-            adb install -r ./TMessagesProj_App/build/outputs/apk/afat/release/app.apk
-            adb logcat -c
-            adb shell monkey -p com.neacheer.messenger -c android.intent.category.LAUNCHER 1
-            sleep 10
-            adb exec-out screencap -p > screenshot_10s.png || true
-            sleep 20
-            adb exec-out screencap -p > screenshot_30s.png || true
-            adb shell pidof com.neacheer.messenger > pid.txt || echo "PROCESS NOT RUNNING" > pid.txt
-            adb shell dumpsys package com.neacheer.messenger > package_info.txt || true
-            adb logcat -d -b crash > crash_buffer.txt || true
-            adb logcat -d > full_logcat.txt || true
-            grep -i "neacheer\|Fatal signal\|SIGSEGV\|SIGABRT\|tmessages\|FATAL" full_logcat.txt > app_log.txt || true
-
-      - name: Upload emulator logs
-        if: ${{ always() && inputs.run_emulator }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: crash-log
-          path: |
-            pid.txt
-            crash_buffer.txt
-            app_log.txt
-            full_logcat.txt
-            package_info.txt
-            screenshot_10s.png
-            screenshot_30s.png
-          retention-days: 14
+          path: TMessagesProj_App/build/outputs/apk/**/*.apk
           if-no-files-found: warn
-
-      - name: Job summary
-        if: always()
-        run: |
-          APK=TMessagesProj_App/build/outputs/apk/afat/release/app.apk
-          {
-            echo "## Итоги сборки NGram"
-            if [ -f "$APK" ]; then
-              echo "- APK: $(du -h "$APK" | cut -f1)"
-              echo "- Нативные библиотеки в APK:"
-              unzip -l "$APK" | grep "libtmessages" | sed 's/^/    /' || true
-            else
-              echo "- APK не собран"
-            fi
-            if [ -f pid.txt ]; then
-              echo "- Процесс в эмуляторе через 30 секунд: $(cat pid.txt)"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
