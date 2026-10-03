@@ -11,8 +11,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Free disk space
         run: |
@@ -37,6 +35,27 @@ jobs:
           key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-
+
+      - name: Init submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive -- \
+            TMessagesProj/jni/td \
+            TMessagesProj/jni/tlottie \
+            TMessagesProj/jni/third_party/boringssl \
+            TMessagesProj/jni/third_party/dav1d \
+            TMessagesProj/jni/third_party/ffmpeg \
+            TMessagesProj/jni/third_party/libvpx \
+            TMessagesProj/jni/third_party/openh264 \
+            TMessagesProj/jni/third_party/xiph/ogg \
+            TMessagesProj/jni/third_party/xiph/opus \
+            TMessagesProj/jni/third_party/xiph/opusfile \
+            TMessagesProj/lib/jlatexmath
+
+      - name: Clone libyuv (битая ссылка на submodule, обходим вручную)
+        run: |
+          rm -rf TMessagesProj/jni/third_party/libyuv
+          git clone --depth=1 https://chromium.googlesource.com/libyuv/libyuv TMessagesProj/jni/third_party/libyuv
 
       - name: Clone media module
         env:
