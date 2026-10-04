@@ -133,6 +133,9 @@ import androidx.viewpager.widget.ViewPager;
 import com.google.zxing.common.detector.MathUtils;
 
 import org.telegram.PhoneFormat.PhoneFormat;
+import com.radolyn.ayugram.AyuConfig;
+import com.radolyn.ayugram.utils.AyuGhostUtils;
+
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
@@ -1202,6 +1205,7 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_APPLY_LOCALIZATION_OR_THEME = 5;
     public final static int OPTION_SHARE = 6;
     public final static int OPTION_SAVE_TO_GALLERY2 = 7;
+    public final static int OPTION_AYU_READ_UNTIL = 133803; // AyuGram ghost mode: "Read until"
     public final static int OPTION_REPLY = 8;
     public final static int OPTION_ADD_TO_STICKERS_OR_MASKS = 9;
     public final static int OPTION_SAVE_TO_DOWNLOADS_OR_MUSIC = 10;
@@ -30972,6 +30976,19 @@ public class ChatActivity extends BaseFragment implements
                 icons.add(R.drawable.msg_calendar2);
             }
 
+            // --- AyuGram ghost mode: manual "read until this message"
+            if (!AyuConfig.sendReadPackets
+                    && selectedObject != null
+                    && selectedObject.messageOwner != null
+                    && !selectedObject.isOutOwner()
+                    && selectedObject.getId() > 0
+                    && !DialogObject.isEncryptedDialog(getDialogId())) {
+                items.add(LocaleController.getString(R.string.AyuGhostReadUntil));
+                options.add(OPTION_AYU_READ_UNTIL);
+                icons.add(R.drawable.msg_view_file);
+            }
+            // --- AyuGram ghost mode
+
             if (options.isEmpty() && optionsView == null) {
                 return false;
             }
@@ -33291,6 +33308,11 @@ public class ChatActivity extends BaseFragment implements
         }
         boolean preserveDim = false;
         switch (option) {
+            // --- AyuGram ghost mode
+            case OPTION_AYU_READ_UNTIL:
+                AyuGhostUtils.markReadOnServer(currentAccount, selectedObject.getId(), getMessagesController().getInputPeer(selectedObject.messageOwner.peer_id));
+                break;
+            // --- AyuGram ghost mode
             case OPTION_RETRY: {
                 final MessageObject object = selectedObject;
                 final MessageObject.GroupedMessages group = selectedObjectGroup;
