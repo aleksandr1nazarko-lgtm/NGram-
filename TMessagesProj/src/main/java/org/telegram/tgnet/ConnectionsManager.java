@@ -23,6 +23,10 @@ import com.google.android.play.core.integrity.IntegrityManagerFactory;
 import com.google.android.play.core.integrity.IntegrityTokenRequest;
 import com.google.android.play.core.integrity.IntegrityTokenResponse;
 
+import com.radolyn.ayugram.AyuConfig;
+import com.radolyn.ayugram.utils.AyuGhostUtils;
+import com.radolyn.ayugram.utils.AyuState;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.telegram.messenger.AccountInstance;
@@ -393,10 +397,95 @@ public class ConnectionsManager extends BaseController {
         return requestToken;
     }
 
-    private void sendRequestInternal(TLObject object, RequestDelegate onComplete, RequestDelegateTimestamp onCompleteTimestamp, QuickAckDelegate onQuickAck, WriteToSocketDelegate onWriteToSocket, int flags, int datacenterId, int connectionType, boolean immediate, int requestToken) {
+    private void sendRequestInternal(TLObject object, RequestDelegate onCompleteOrig, RequestDelegateTimestamp onCompleteTimestamp, QuickAckDelegate onQuickAck, WriteToSocketDelegate onWriteToSocket, int flags, int datacenterId, int connectionType, boolean immediate, int requestToken) {
         if (BuildVars.LOGS_ENABLED) {
             FileLog.d("send request " + object + " with token = " + requestToken);
         }
+
+        // --- AyuGram ghost mode hook
+        {
+            // don't send typing / upload progress
+            if (!AyuConfig.sendUploadProgress &&
+                    (object instanceof TLRPC.TL_messages_setTyping || object instanceof TLRPC.TL_messages_setEncryptedTyping)) {
+                return; // no callback needed
+            }
+
+            // don't send online status
+            if (object instanceof org.telegram.tgnet.tl.TL_account.updateStatus) {
+                var status = (org.telegram.tgnet.tl.TL_account.updateStatus) object;
+                if (!AyuConfig.sendOnlinePackets) {
+                    status.offline = true;
+                } else if (AyuConfig.sendOfflinePacketAfterOnline && !status.offline && onCompleteOrig != null) {
+                    // go offline right after the online packet was delivered
+                    final RequestDelegate statusComplete = onCompleteOrig;
+                    onCompleteOrig = (response, error) -> {
+                        statusComplete.run(response, error);
+                        if (error == null) {
+                            var offlineReq = new org.telegram.tgnet.tl.TL_account.updateStatus();
+                            offlineReq.offline = true;
+                            sendRequest(offlineReq, (a1, a2) -> {});
+                        }
+                    };
+                }
+            }
+
+            // don't send read status
+            if (!AyuConfig.sendReadPackets &&
+                    (object instanceof TLRPC.TL_messages_readHistory ||
+                            object instanceof TLRPC.TL_messages_readEncryptedHistory ||
+                            object instanceof TLRPC.TL_messages_readDiscussion ||
+                            object instanceof TLRPC.TL_messages_readMessageContents ||
+                            object instanceof TLRPC.TL_channels_readHistory ||
+                            object instanceof TLRPC.TL_channels_readMessageContents)) {
+                if (!AyuState.getAllowReadPacket()) {
+                    // pretend that the server accepted it
+                    var fakeRes = new TLRPC.TL_messages_affectedMessages();
+                    fakeRes.pts = -1;
+                    fakeRes.pts_count = 0;
+                    try {
+                        if (onCompleteOrig != null) {
+                            onCompleteOrig.run(fakeRes, null);
+                        }
+                    } catch (Exception e) {
+                        FileLog.e(e);
+                    }
+                    return;
+                }
+            }
+
+            // mark chat as read right after the user sends a message
+            if (AyuConfig.markReadAfterSend && !AyuConfig.sendReadPackets && onCompleteOrig != null) {
+                TLRPC.InputPeer peer = null;
+                if (object instanceof TLRPC.TL_messages_sendMessage) {
+                    peer = ((TLRPC.TL_messages_sendMessage) object).peer;
+                } else if (object instanceof TLRPC.TL_messages_sendMedia) {
+                    peer = ((TLRPC.TL_messages_sendMedia) object).peer;
+                } else if (object instanceof TLRPC.TL_messages_sendMultiMedia) {
+                    peer = ((TLRPC.TL_messages_sendMultiMedia) object).peer;
+                }
+
+                if (peer != null) {
+                    final long dialogId = AyuGhostUtils.getDialogId(peer);
+                    final TLRPC.InputPeer finalPeer = peer;
+                    final RequestDelegate sendComplete = onCompleteOrig;
+                    onCompleteOrig = (response, error) -> {
+                        sendComplete.run(response, error);
+
+                        getMessagesStorage().getDialogMaxMessageId(dialogId, maxId -> {
+                            TLRPC.TL_messages_readHistory request = new TLRPC.TL_messages_readHistory();
+                            request.peer = finalPeer;
+                            request.max_id = maxId;
+
+                            AyuState.setAllowReadPacket(true, 1);
+                            sendRequest(request, (a1, a2) -> {});
+                        });
+                    };
+                }
+            }
+        }
+        final RequestDelegate onComplete = onCompleteOrig;
+        // --- AyuGram ghost mode hook
+
         try {
             NativeByteBuffer buffer = new NativeByteBuffer(object.getObjectSize());
             object.serializeToStream(buffer);

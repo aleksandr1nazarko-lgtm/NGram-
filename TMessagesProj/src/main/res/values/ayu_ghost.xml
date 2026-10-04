@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="AyuGhostSettings">Ghost mode</string>
+  <string name="AyuGhostEssentialsHeader">Ghost essentials</string>
+  <string name="AyuGhostToggle">Ghost mode</string>
+  <string name="AyuGhostDontRead">Don\'t read messages</string>
+  <string name="AyuGhostDontOnline">Don\'t send online</string>
+  <string name="AyuGhostDontTyping">Don\'t send typing</string>
+  <string name="AyuGhostOfflineAfterOnline">Immediate offline after online</string>
+  <string name="AyuGhostMarkReadAfterSend">Send read status after reply</string>
+  <string name="AyuGhostInfo">Ghost mode turns on all four options above at once. Each option can also be changed separately.</string>
+  <string name="AyuGhostEnabled">Ghost mode turned on</string>
+  <string name="AyuGhostDisabled">Ghost mode turned off</string>
+  <string name="AyuGhostReadUntil">Read until</string>
+</resources>
