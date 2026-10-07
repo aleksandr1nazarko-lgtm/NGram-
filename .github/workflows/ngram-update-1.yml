@@ -1,0 +1,452 @@
+name: NGram update 1 (ghost mode + notifications)
+
+# Запуск: вкладка Actions -> этот workflow -> Run workflow.
+# Правки попадут в ветку ngram-update (main не трогается).
+# Потом: Actions -> Build NGram -> Run workflow -> в списке Branch выбрать ngram-update.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply changes
+        run: |
+          set -euo pipefail
+          mkdir -p tmp_ngram_files
+          cat > tmp_ngram_files/AyuConfig.java <<'NGRAM_EOF'
+          /*
+           * Based on the source code of AyuGram for Android (Radolyn Labs, 2023).
+           * https://github.com/AyuGram/AyuGram4A  -- licensed under GPL, keep this notice.
+           * Trimmed to the ghost-mode subset.
+           */
+
+          package com.radolyn.ayugram;
+
+          import android.app.Activity;
+          import android.content.SharedPreferences;
+
+          import org.telegram.messenger.ApplicationLoader;
+
+          /** Ghost-mode settings only (trimmed from AyuGram's AyuConfig). */
+          public class AyuConfig {
+              private static final Object sync = new Object();
+
+              public static SharedPreferences preferences;
+              public static SharedPreferences.Editor editor;
+
+              public static boolean sendReadPackets;
+              public static boolean sendReadStories;
+              public static boolean sendOnlinePackets;
+              public static boolean sendOfflinePacketAfterOnline;
+              public static boolean sendUploadProgress;
+              public static boolean markReadAfterSend;
+
+              private static boolean configLoaded;
+
+              static {
+                  loadConfig();
+              }
+
+              public static void loadConfig() {
+                  synchronized (sync) {
+                      if (configLoaded) {
+                          return;
+                      }
+
+                      preferences = ApplicationLoader.applicationContext.getSharedPreferences("ayuconfig", Activity.MODE_PRIVATE);
+                      editor = preferences.edit();
+
+                      // defaults = normal (non-ghost) behaviour
+                      sendReadPackets = preferences.getBoolean("sendReadPackets", true);
+                      sendReadStories = preferences.getBoolean("sendReadStories", true);
+                      sendOnlinePackets = preferences.getBoolean("sendOnlinePackets", true);
+                      sendUploadProgress = preferences.getBoolean("sendUploadProgress", true);
+                      sendOfflinePacketAfterOnline = preferences.getBoolean("sendOfflinePacketAfterOnline", false);
+                      markReadAfterSend = preferences.getBoolean("markReadAfterSend", true);
+
+                      configLoaded = true;
+                  }
+              }
+
+              /** Ghost mode is "on" when every ghost option is on ("Send read status after reply" is independent). */
+              public static boolean isGhostModeActive() {
+                  return !sendReadPackets && !sendReadStories && !sendOnlinePackets && !sendUploadProgress && sendOfflinePacketAfterOnline;
+              }
+
+              public static void setGhostMode(boolean enabled) {
+                  sendReadPackets = !enabled;
+                  sendReadStories = !enabled;
+                  sendOnlinePackets = !enabled;
+                  sendUploadProgress = !enabled;
+                  sendOfflinePacketAfterOnline = enabled;
+
+                  editor.putBoolean("sendReadPackets", sendReadPackets)
+                          .putBoolean("sendReadStories", sendReadStories)
+                          .putBoolean("sendOnlinePackets", sendOnlinePackets)
+                          .putBoolean("sendUploadProgress", sendUploadProgress)
+                          .putBoolean("sendOfflinePacketAfterOnline", sendOfflinePacketAfterOnline)
+                          .apply();
+              }
+
+              public static void toggleGhostMode() {
+                  setGhostMode(!isGhostModeActive());
+              }
+          }
+          NGRAM_EOF
+          cat > tmp_ngram_files/GhostPreferencesActivity.java <<'NGRAM_EOF'
+          /*
+           * Ghost-mode settings screen. Logic and option set are taken from AyuGram for Android
+           * (Radolyn Labs, https://github.com/AyuGram/AyuGram4A, GPL); the UI is rewritten on plain
+           * Telegram cells so it does not depend on exteraGram's BasePreferencesActivity.
+           */
+
+          package com.radolyn.ayugram.ui.preferences;
+
+          import android.content.Context;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.FrameLayout;
+
+          import androidx.annotation.NonNull;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import androidx.recyclerview.widget.RecyclerView;
+
+          import com.radolyn.ayugram.AyuConfig;
+          import com.radolyn.ayugram.utils.AyuState;
+
+          import org.telegram.messenger.LocaleController;
+          import org.telegram.messenger.R;
+          import org.telegram.ui.ActionBar.ActionBar;
+          import org.telegram.ui.ActionBar.BaseFragment;
+          import org.telegram.ui.ActionBar.Theme;
+          import org.telegram.ui.Cells.HeaderCell;
+          import org.telegram.ui.Cells.ShadowSectionCell;
+          import org.telegram.ui.Cells.TextCheckCell;
+          import org.telegram.ui.Cells.TextInfoPrivacyCell;
+          import org.telegram.ui.Components.BulletinFactory;
+          import org.telegram.ui.Components.LayoutHelper;
+          import org.telegram.ui.Components.RecyclerListView;
+
+          public class GhostPreferencesActivity extends BaseFragment {
+
+              private static final int TYPE_HEADER = 0;
+              private static final int TYPE_CHECK = 1;
+              private static final int TYPE_INFO = 2;
+              private static final int TYPE_SPACER = 3;
+
+              private RecyclerListView listView;
+              private ListAdapter adapter;
+
+              private int rowCount;
+              private int ghostToggleRow;
+              private int spacerRow;
+              private int optionsHeaderRow;
+              private int dontReadRow;
+              private int dontStoriesRow;
+              private int dontOnlineRow;
+              private int dontTypingRow;
+              private int offlineAfterOnlineRow;
+              private int markReadAfterSendRow;
+              private int infoRow;
+
+              private void updateRows() {
+                  rowCount = 0;
+                  ghostToggleRow = rowCount++;
+                  spacerRow = rowCount++;
+                  optionsHeaderRow = rowCount++;
+                  dontReadRow = rowCount++;
+                  dontStoriesRow = rowCount++;
+                  dontOnlineRow = rowCount++;
+                  dontTypingRow = rowCount++;
+                  offlineAfterOnlineRow = rowCount++;
+                  markReadAfterSendRow = rowCount++;
+                  infoRow = rowCount++;
+              }
+
+              @Override
+              public boolean onFragmentCreate() {
+                  updateRows();
+                  return super.onFragmentCreate();
+              }
+
+              @Override
+              public View createView(Context context) {
+                  actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+                  actionBar.setAllowOverlayTitle(true);
+                  actionBar.setTitle(LocaleController.getString(R.string.AyuGhostSettings));
+                  actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                      @Override
+                      public void onItemClick(int id) {
+                          if (id == -1) {
+                              finishFragment();
+                          }
+                      }
+                  });
+
+                  fragmentView = new FrameLayout(context);
+                  FrameLayout frameLayout = (FrameLayout) fragmentView;
+                  frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+
+                  listView = new RecyclerListView(context);
+                  listView.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false));
+                  listView.setVerticalScrollBarEnabled(false);
+                  listView.setAdapter(adapter = new ListAdapter());
+                  frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
+                  listView.setOnItemClickListener((view, position) -> {
+                      if (position == ghostToggleRow) {
+                          AyuConfig.toggleGhostMode();
+                          AyuState.setAllowReadPacket(false, -1);
+                          adapter.notifyDataSetChanged();
+                          BulletinFactory.of(this).createSuccessBulletin(LocaleController.getString(
+                                  AyuConfig.isGhostModeActive() ? R.string.AyuGhostEnabled : R.string.AyuGhostDisabled)).show();
+                      } else if (position == dontReadRow) {
+                          AyuConfig.editor.putBoolean("sendReadPackets", AyuConfig.sendReadPackets ^= true).apply();
+                          AyuState.setAllowReadPacket(false, -1);
+                          adapter.notifyDataSetChanged();
+                      } else if (position == dontStoriesRow) {
+                          AyuConfig.editor.putBoolean("sendReadStories", AyuConfig.sendReadStories ^= true).apply();
+                          adapter.notifyDataSetChanged();
+                      } else if (position == dontOnlineRow) {
+                          AyuConfig.editor.putBoolean("sendOnlinePackets", AyuConfig.sendOnlinePackets ^= true).apply();
+                          adapter.notifyDataSetChanged();
+                      } else if (position == dontTypingRow) {
+                          AyuConfig.editor.putBoolean("sendUploadProgress", AyuConfig.sendUploadProgress ^= true).apply();
+                          adapter.notifyDataSetChanged();
+                      } else if (position == offlineAfterOnlineRow) {
+                          AyuConfig.editor.putBoolean("sendOfflinePacketAfterOnline", AyuConfig.sendOfflinePacketAfterOnline ^= true).apply();
+                          adapter.notifyDataSetChanged();
+                      } else if (position == markReadAfterSendRow) {
+                          AyuConfig.editor.putBoolean("markReadAfterSend", AyuConfig.markReadAfterSend ^= true).apply();
+                          AyuState.setAllowReadPacket(false, -1);
+                          adapter.notifyDataSetChanged();
+                      }
+                  });
+
+                  return fragmentView;
+              }
+
+              private class ListAdapter extends RecyclerListView.SelectionAdapter {
+                  @NonNull
+                  @Override
+                  public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+                      View view;
+                      if (viewType == TYPE_HEADER) {
+                          view = new HeaderCell(getContext());
+                          view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                      } else if (viewType == TYPE_CHECK) {
+                          view = new TextCheckCell(getContext());
+                          view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                      } else if (viewType == TYPE_SPACER) {
+                          view = new ShadowSectionCell(getContext(), 16);
+                      } else {
+                          view = new TextInfoPrivacyCell(getContext());
+                      }
+                      return new RecyclerListView.Holder(view);
+                  }
+
+                  @Override
+                  public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+                      switch (holder.getItemViewType()) {
+                          case TYPE_HEADER:
+                              ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.AyuGhostOptionsHeader));
+                              break;
+                          case TYPE_INFO:
+                              ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.AyuGhostInfo));
+                              break;
+                          case TYPE_CHECK:
+                              TextCheckCell cell = (TextCheckCell) holder.itemView;
+                              if (position == ghostToggleRow) {
+                                  cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostToggle), AyuConfig.isGhostModeActive(), false);
+                              } else if (position == dontReadRow) {
+                                  cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostDontRead), !AyuConfig.sendReadPackets, true);
+                              } else if (position == dontStoriesRow) {
+                                  cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostDontStories), !AyuConfig.sendReadStories, true);
+                              } else if (position == dontOnlineRow) {
+                                  cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostDontOnline), !AyuConfig.sendOnlinePackets, true);
+                              } else if (position == dontTypingRow) {
+                                  cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostDontTyping), !AyuConfig.sendUploadProgress, true);
+                              } else if (position == offlineAfterOnlineRow) {
+                                  cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostOfflineAfterOnline), AyuConfig.sendOfflinePacketAfterOnline, true);
+                              } else if (position == markReadAfterSendRow) {
+                                  cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostMarkReadAfterSend), AyuConfig.markReadAfterSend, false);
+                              }
+                              break;
+                      }
+                  }
+
+                  @Override
+                  public int getItemCount() {
+                      return rowCount;
+                  }
+
+                  @Override
+                  public boolean isEnabled(RecyclerView.ViewHolder holder) {
+                      return holder.getItemViewType() == TYPE_CHECK;
+                  }
+
+                  @Override
+                  public int getItemViewType(int position) {
+                      if (position == optionsHeaderRow) {
+                          return TYPE_HEADER;
+                      } else if (position == infoRow) {
+                          return TYPE_INFO;
+                      } else if (position == spacerRow) {
+                          return TYPE_SPACER;
+                      }
+                      return TYPE_CHECK;
+                  }
+              }
+
+              @Override
+              public boolean isSupportEdgeToEdge() {
+                  return true;
+              }
+
+              @Override
+              public void onInsets(int left, int top, int right, int bottom) {
+                  listView.setPadding(0, 0, 0, bottom);
+                  listView.setClipToPadding(false);
+              }
+          }
+          NGRAM_EOF
+          cat > tmp_ngram_patch.py <<'NGRAM_EOF'
+          import re, shutil, sys, os
+
+          ROOT = os.getcwd()
+          SRC = os.path.join(ROOT, "tmp_ngram_files")
+          J = "TMessagesProj/src/main/java"
+          R = "TMessagesProj/src/main/res"
+
+          def rd(p):
+              with open(p, encoding="utf-8") as f:
+                  return f.read()
+
+          def wr(p, s):
+              with open(p, "w", encoding="utf-8", newline="\n") as f:
+                  f.write(s)
+
+          def must_replace(path, old, new, marker):
+              s = rd(path)
+              if marker in s:
+                  print("skip (already applied):", path, "->", marker)
+                  return
+              if s.count(old) != 1:
+                  sys.exit("ERROR: anchor not found exactly once in %s:\n%s" % (path, old))
+              wr(path, s.replace(old, new))
+              print("patched:", path)
+
+          # 1) full files
+          for name, dest in [
+              ("AyuConfig.java", J + "/com/radolyn/ayugram/AyuConfig.java"),
+              ("GhostPreferencesActivity.java", J + "/com/radolyn/ayugram/ui/preferences/GhostPreferencesActivity.java"),
+          ]:
+              shutil.copyfile(os.path.join(SRC, name), os.path.join(ROOT, dest))
+              print("written:", dest)
+
+          # 2) ConnectionsManager: block story-read ("view") requests
+          cm = J + "/org/telegram/tgnet/ConnectionsManager.java"
+          must_replace(
+              cm,
+              "            // don't send read status\n            if (!AyuConfig.sendReadPackets &&",
+              "            // don't mark stories as viewed\n"
+              "            if (!AyuConfig.sendReadStories && object instanceof org.telegram.tgnet.tl.TL_stories.TL_stories_readStories) {\n"
+              "                return; // callers pass no callback for this request\n"
+              "            }\n\n"
+              "            // don't send read status\n            if (!AyuConfig.sendReadPackets &&",
+              "sendReadStories",
+          )
+
+          # 3) background connection on by default (pushes without Telegram's FCM)
+          must_replace(
+              cm,
+              'return MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("backgroundConnection", false);',
+              'return MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("backgroundConnection", true);',
+              'getBoolean("backgroundConnection", true)',
+          )
+          al = J + "/org/telegram/messenger/ApplicationLoader.java"
+          must_replace(
+              al,
+              '        SharedPreferences preferences = MessagesController.getGlobalNotificationsSettings();\n        boolean enabled;\n        if (preferences.contains("pushService")) {',
+              '        SharedPreferences preferences = MessagesController.getGlobalNotificationsSettings();\n'
+              '        // NGram: keep the connection and service alive by default, so messages arrive without FCM\n'
+              '        if (!preferences.contains("pushConnection") || !preferences.contains("pushService")) {\n'
+              '            SharedPreferences.Editor seed = preferences.edit();\n'
+              '            if (!preferences.contains("pushConnection")) {\n'
+              '                seed.putBoolean("pushConnection", true);\n'
+              '            }\n'
+              '            if (!preferences.contains("pushService")) {\n'
+              '                seed.putBoolean("pushService", true);\n'
+              '            }\n'
+              '            seed.apply();\n'
+              '        }\n'
+              '        boolean enabled;\n        if (preferences.contains("pushService")) {',
+              "NGram: keep the connection",
+          )
+
+          # 4) main settings: no "Ghost mode" subtitle under NGram
+          must_replace(
+              J + "/org/telegram/ui/SettingsActivity.java",
+              "getString(R.string.NGramSettings), getString(R.string.NGramSettingsInfo)));",
+              "getString(R.string.NGramSettings)));",
+              "getString(R.string.NGramSettings)));",
+          )
+
+          # 5) strings
+          def fix_strings(path, info, stories, header, settings_title=None):
+              s = rd(path)
+              s = re.sub(r'(<string name="AyuGhostInfo">).*?(</string>)', lambda m: m.group(1) + info + m.group(2), s, flags=re.S)
+              if settings_title:
+                  s = re.sub(r'(<string name="AyuGhostSettings">).*?(</string>)', lambda m: m.group(1) + settings_title + m.group(2), s)
+              if 'name="AyuGhostDontStories"' not in s:
+                  add = ('    <string name="AyuGhostDontStories">%s</string>\n'
+                         '    <string name="AyuGhostOptionsHeader">%s</string>\n') % (stories, header)
+                  anchor = '    <string name="AyuGhostEnabled">'
+                  if s.count(anchor) != 1:
+                      sys.exit("ERROR: strings anchor missing in " + path)
+                  s = s.replace(anchor, add + anchor)
+              wr(path, s)
+              print("strings updated:", path)
+
+          fix_strings(
+              R + "/values/strings.xml",
+              "The Ghost mode switch turns on all options below at once. Each option can also be changed separately.",
+              "Don\\'t show story views",
+              "Options",
+          )
+          fix_strings(
+              R + "/values-ru/strings.xml",
+              "Переключатель «Режим призрака» включает сразу все опции ниже. Каждую опцию можно менять отдельно.",
+              "Не показывать просмотр историй",
+              "Параметры",
+              settings_title="Режим призрака",
+          )
+          print("DONE")
+          NGRAM_EOF
+          python3 tmp_ngram_patch.py
+          rm -rf tmp_ngram_files tmp_ngram_patch.py
+
+      - name: Commit and push to ngram-update
+        run: |
+          set -euo pipefail
+          git config user.name "ngram-bot"
+          git config user.email "ngram-bot@users.noreply.github.com"
+          git checkout -B ngram-update
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+            exit 0
+          fi
+          git commit -m "Ghost mode: master toggle, story views, spacer; notifications keep-alive defaults"
+          git push --force origin ngram-update
