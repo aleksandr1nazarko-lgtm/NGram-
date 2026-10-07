@@ -1,0 +1,63 @@
+name: Fix var for Java 8
+# Запуск вручную: Actions -> Fix var for Java 8 -> Run workflow.
+# Заменяет слово var на явные типы в 3 файлах (иначе сборка падает) и коммитит в main.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Replace var with explicit types
+        run: |
+          set -e
+          cat > /tmp/fix_var.py <<'PYEOF'
+          import re, sys
+          base = "TMessagesProj/src/main/java/"
+          
+          def edit(path, pairs):
+              s = open(base + path, encoding="utf-8").read()
+              for pat, rep in pairs:
+                  s, n = re.subn(pat, rep, s)
+                  if n == 0:
+                      print("WARNING: not found:", pat)
+              open(base + path, "w", encoding="utf-8").write(s)
+          
+          edit("com/radolyn/ayugram/utils/AyuGhostUtils.java", [
+              (r"\bvar connectionsManager = ", "ConnectionsManager connectionsManager = "),
+              (r"\bvar controller = ", "MessagesController controller = "),
+              (r"\bvar storage = ", "MessagesStorage storage = "),
+              (r"\bvar markAsReadMessagesInbox = ", "LongSparseIntArray markAsReadMessagesInbox = "),
+              (r"\bvar stillUnreadMessagesCount = ", "LongSparseIntArray stillUnreadMessagesCount = "),
+              (r"\bvar readHistory = \(TLRPC\.TL_messages_readHistory\)", "TLRPC.TL_messages_readHistory readHistory = (TLRPC.TL_messages_readHistory)"),
+              (r"\bvar readDiscussion = \(TLRPC\.TL_messages_readDiscussion\)", "TLRPC.TL_messages_readDiscussion readDiscussion = (TLRPC.TL_messages_readDiscussion)"),
+              (r"\bvar readHistory = \(TLRPC\.TL_channels_readHistory\)", "TLRPC.TL_channels_readHistory readHistory = (TLRPC.TL_channels_readHistory)"),
+              (r"\bvar peer = readHistory\.channel;", "TLRPC.InputChannel peer = readHistory.channel;"),
+              (r"\bvar peer = (readHistory|readDiscussion)\.peer;", r"TLRPC.InputPeer peer = \1.peer;"),
+              (r"\bvar maxId = ", "int maxId = "),
+              (r"\bvar dialogId = ", "long dialogId = "),
+          ])
+          edit("com/radolyn/ayugram/utils/AyuStateVariable.java", [
+              (r"\bvar currentVal = ", "boolean currentVal = "),
+          ])
+          edit("org/telegram/tgnet/ConnectionsManager.java", [
+              (r"\bvar status = \(org\.telegram\.tgnet\.tl\.TL_account\.updateStatus\)",
+               "org.telegram.tgnet.tl.TL_account.updateStatus status = (org.telegram.tgnet.tl.TL_account.updateStatus)"),
+              (r"\bvar offlineReq = ", "org.telegram.tgnet.tl.TL_account.updateStatus offlineReq = "),
+              (r"\bvar fakeRes = ", "TLRPC.TL_messages_affectedMessages fakeRes = "),
+          ])
+          PYEOF
+          python3 /tmp/fix_var.py
+          if grep -rnE "\bvar [a-zA-Z_]+ *=" TMessagesProj/src/main/java/com/radolyn TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java; then
+            echo "::error::Остались var"; exit 1
+          fi
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Replace var with explicit types (Java 8 source level)"
+          git push origin HEAD
