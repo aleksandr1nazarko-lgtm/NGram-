@@ -1,0 +1,239 @@
+name: Add NGram settings section
+# Запуск вручную: Actions -> Add NGram settings section -> Run workflow.
+# Добавляет раздел "NGram" в самый верх Настроек, внутри него пункт "Ghost mode". Коммитит в main.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add NGram section
+        run: |
+          set -e
+          mkdir -p TMessagesProj/src/main/java/com/radolyn/ayugram/ui/preferences
+          mkdir -p TMessagesProj/src/main/res/values TMessagesProj/src/main/res/values-ru
+
+          cat > TMessagesProj/src/main/java/com/radolyn/ayugram/ui/preferences/NGramPreferencesActivity.java <<'XEOF'
+          /*
+           * NGram settings section: entry page that holds NGram-specific features (currently "Ghost mode").
+           */
+
+          package com.radolyn.ayugram.ui.preferences;
+
+          import android.content.Context;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.FrameLayout;
+
+          import androidx.annotation.NonNull;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import androidx.recyclerview.widget.RecyclerView;
+
+          import org.telegram.messenger.LocaleController;
+          import org.telegram.messenger.R;
+          import org.telegram.ui.ActionBar.ActionBar;
+          import org.telegram.ui.ActionBar.BaseFragment;
+          import org.telegram.ui.ActionBar.Theme;
+          import org.telegram.ui.Cells.HeaderCell;
+          import org.telegram.ui.Cells.TextCell;
+          import org.telegram.ui.Components.LayoutHelper;
+          import org.telegram.ui.Components.RecyclerListView;
+
+          public class NGramPreferencesActivity extends BaseFragment {
+
+              private static final int TYPE_HEADER = 0;
+              private static final int TYPE_TEXT = 1;
+
+              private RecyclerListView listView;
+
+              private int rowCount;
+              private int headerRow;
+              private int ghostRow;
+
+              private void updateRows() {
+                  rowCount = 0;
+                  headerRow = rowCount++;
+                  ghostRow = rowCount++;
+              }
+
+              @Override
+              public boolean onFragmentCreate() {
+                  updateRows();
+                  return super.onFragmentCreate();
+              }
+
+              @Override
+              public View createView(Context context) {
+                  actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+                  actionBar.setAllowOverlayTitle(true);
+                  actionBar.setTitle(LocaleController.getString(R.string.NGramSettings));
+                  actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                      @Override
+                      public void onItemClick(int id) {
+                          if (id == -1) {
+                              finishFragment();
+                          }
+                      }
+                  });
+
+                  fragmentView = new FrameLayout(context);
+                  FrameLayout frameLayout = (FrameLayout) fragmentView;
+                  frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+
+                  listView = new RecyclerListView(context);
+                  listView.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false));
+                  listView.setVerticalScrollBarEnabled(false);
+                  listView.setAdapter(new ListAdapter());
+                  frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
+                  listView.setOnItemClickListener((view, position) -> {
+                      if (position == ghostRow) {
+                          presentFragment(new GhostPreferencesActivity());
+                      }
+                  });
+
+                  return fragmentView;
+              }
+
+              private class ListAdapter extends RecyclerListView.SelectionAdapter {
+                  @NonNull
+                  @Override
+                  public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+                      View view;
+                      if (viewType == TYPE_HEADER) {
+                          view = new HeaderCell(getContext());
+                      } else {
+                          view = new TextCell(getContext());
+                      }
+                      view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                      return new RecyclerListView.Holder(view);
+                  }
+
+                  @Override
+                  public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+                      if (holder.getItemViewType() == TYPE_HEADER) {
+                          ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.NGramSettings));
+                      } else if (position == ghostRow) {
+                          ((TextCell) holder.itemView).setTextAndColorfulIcon(
+                                  LocaleController.getString(R.string.AyuGhostSettings), R.drawable.ayu_ghost, 0xFF9B6BFF, false);
+                      }
+                  }
+
+                  @Override
+                  public int getItemCount() {
+                      return rowCount;
+                  }
+
+                  @Override
+                  public boolean isEnabled(RecyclerView.ViewHolder holder) {
+                      return holder.getItemViewType() == TYPE_TEXT;
+                  }
+
+                  @Override
+                  public int getItemViewType(int position) {
+                      return position == headerRow ? TYPE_HEADER : TYPE_TEXT;
+                  }
+              }
+
+              @Override
+              public boolean isSupportEdgeToEdge() {
+                  return true;
+              }
+
+              @Override
+              public void onInsets(int left, int top, int right, int bottom) {
+                  listView.setPadding(0, 0, 0, bottom);
+                  listView.setClipToPadding(false);
+              }
+          }
+          XEOF
+
+          cat > TMessagesProj/src/main/res/values/ayu_ghost.xml <<'XEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <string name="NGramSettings">NGram</string>
+            <string name="AyuGhostSettings">Ghost mode</string>
+            <string name="AyuGhostEssentialsHeader">Ghost essentials</string>
+            <string name="AyuGhostToggle">Ghost mode</string>
+            <string name="AyuGhostDontRead">Don\'t read messages</string>
+            <string name="AyuGhostDontOnline">Don\'t send online</string>
+            <string name="AyuGhostDontTyping">Don\'t send typing</string>
+            <string name="AyuGhostOfflineAfterOnline">Immediate offline after online</string>
+            <string name="AyuGhostMarkReadAfterSend">Send read status after reply</string>
+            <string name="AyuGhostInfo">Ghost mode turns on all four options above at once. Each option can also be changed separately.</string>
+            <string name="AyuGhostEnabled">Ghost mode turned on</string>
+            <string name="AyuGhostDisabled">Ghost mode turned off</string>
+            <string name="AyuGhostReadUntil">Read until</string>
+            <string name="NGramSettingsInfo">Ghost mode</string>
+          </resources>
+          XEOF
+
+          cat > TMessagesProj/src/main/res/values-ru/ayu_ghost.xml <<'XEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <string name="NGramSettings">NGram</string>
+            <string name="AyuGhostSettings">Ghost mode</string>
+            <string name="AyuGhostEssentialsHeader">Режим призрака</string>
+            <string name="AyuGhostToggle">Режим призрака</string>
+            <string name="AyuGhostDontRead">Не читать сообщения</string>
+            <string name="AyuGhostDontOnline">Не отправлять «онлайн»</string>
+            <string name="AyuGhostDontTyping">Не отправлять «печатает»</string>
+            <string name="AyuGhostOfflineAfterOnline">Сразу «офлайн» после «онлайн»</string>
+            <string name="AyuGhostMarkReadAfterSend">Читать после ответа</string>
+            <string name="AyuGhostInfo">Режим призрака включает сразу все четыре опции выше. Каждую опцию можно менять отдельно.</string>
+            <string name="AyuGhostEnabled">Режим призрака включён</string>
+            <string name="AyuGhostDisabled">Режим призрака выключен</string>
+            <string name="AyuGhostReadUntil">Прочитать до</string>
+            <string name="NGramSettingsInfo">Ghost mode</string>
+          </resources>
+          XEOF
+
+          cat > /tmp/edit_settings.py <<'XEOF'
+          import re
+          p = "TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java"
+          s = open(p, encoding="utf-8").read()
+
+          if "NGramPreferencesActivity" in s:
+              print("already applied")
+              raise SystemExit(0)
+
+          # 1) import
+          s, n = re.subn(r"(import org\.telegram\.messenger\.R;\n)",
+                         r"\1import com.radolyn.ayugram.ui.preferences.NGramPreferencesActivity;\n", s, count=1)
+          assert n == 1, "import anchor not found"
+
+          # 2) menu row at the very top of the settings list (before the Account row, id 1)
+          pat = re.compile(r"^([ \t]*)items\.add\(SettingCell\.Factory\.of\(1,", re.M)
+          m = pat.search(s)
+          assert m, "row anchor (id 1) not found"
+          ind = m.group(1)
+          row = (ind + 'items.add(SettingCell.Factory.of(9001, 0xFFB659FF, 0xFF617CFF, R.drawable.ayu_ghost, '
+                 'getString(R.string.NGramSettings), getString(R.string.NGramSettingsInfo)));\n'
+                 + ind + 'items.add(UItem.asShadow(null));\n')
+          s = s[:m.start()] + row + s[m.start():]
+
+          # 3) click handler
+          pat = re.compile(r"^([ \t]*)case 1:\n([ \t]*)presentSettingFragment\(new UserInfoActivity\(\)\);", re.M)
+          m = pat.search(s)
+          assert m, "case 1 anchor not found"
+          ind = m.group(1)
+          case = (ind + "case 9001:\n" + ind + "    presentSettingFragment(new NGramPreferencesActivity());\n"
+                  + ind + "    break;\n")
+          s = s[:m.start()] + case + s[m.start():]
+
+          open(p, "w", encoding="utf-8").write(s)
+          print("SettingsActivity patched")
+          XEOF
+          python3 /tmp/edit_settings.py
+
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Add NGram settings section with Ghost mode entry" || echo "nothing to commit"
+          git push origin HEAD
