@@ -412,7 +412,7 @@ public class ConnectionsManager extends BaseController {
 
             // don't send online status
             if (object instanceof org.telegram.tgnet.tl.TL_account.updateStatus) {
-                var status = (org.telegram.tgnet.tl.TL_account.updateStatus) object;
+                org.telegram.tgnet.tl.TL_account.updateStatus status = (org.telegram.tgnet.tl.TL_account.updateStatus) object;
                 if (!AyuConfig.sendOnlinePackets) {
                     status.offline = true;
                 } else if (AyuConfig.sendOfflinePacketAfterOnline && !status.offline && onCompleteOrig != null) {
@@ -421,7 +421,7 @@ public class ConnectionsManager extends BaseController {
                     onCompleteOrig = (response, error) -> {
                         statusComplete.run(response, error);
                         if (error == null) {
-                            var offlineReq = new org.telegram.tgnet.tl.TL_account.updateStatus();
+                            org.telegram.tgnet.tl.TL_account.updateStatus offlineReq = new org.telegram.tgnet.tl.TL_account.updateStatus();
                             offlineReq.offline = true;
                             sendRequest(offlineReq, (a1, a2) -> {});
                         }
@@ -439,7 +439,7 @@ public class ConnectionsManager extends BaseController {
                             object instanceof TLRPC.TL_channels_readMessageContents)) {
                 if (!AyuState.getAllowReadPacket()) {
                     // pretend that the server accepted it
-                    var fakeRes = new TLRPC.TL_messages_affectedMessages();
+                    TLRPC.TL_messages_affectedMessages fakeRes = new TLRPC.TL_messages_affectedMessages();
                     fakeRes.pts = -1;
                     fakeRes.pts_count = 0;
                     try {

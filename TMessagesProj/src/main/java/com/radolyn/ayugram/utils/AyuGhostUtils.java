@@ -19,7 +19,7 @@ import org.telegram.tgnet.TLRPC;
 
 public class AyuGhostUtils {
     public static void markReadOnServer(int accountId, int messageId, TLRPC.InputPeer peer) {
-        var connectionsManager = ConnectionsManager.getInstance(accountId);
+        ConnectionsManager connectionsManager = ConnectionsManager.getInstance(accountId);
 
         TLObject req;
         if (peer instanceof TLRPC.TL_inputPeerChannel) {
@@ -46,11 +46,11 @@ public class AyuGhostUtils {
     }
 
     public static void markReadLocally(Integer accountId, long dialogId, int untilId, int unread) {
-        var controller = MessagesController.getInstance(accountId);
-        var storage = MessagesStorage.getInstance(accountId);
+        MessagesController controller = MessagesController.getInstance(accountId);
+        MessagesStorage storage = MessagesStorage.getInstance(accountId);
 
-        var markAsReadMessagesInbox = new LongSparseIntArray();
-        var stillUnreadMessagesCount = new LongSparseIntArray();
+        LongSparseIntArray markAsReadMessagesInbox = new LongSparseIntArray();
+        LongSparseIntArray stillUnreadMessagesCount = new LongSparseIntArray();
 
         markAsReadMessagesInbox.put(dialogId, untilId);
         stillUnreadMessagesCount.put(dialogId, unread);
@@ -79,27 +79,27 @@ public class AyuGhostUtils {
 
     public static Pair<Long, Integer> getDialogIdAndMessageIdFromRequest(TLObject req) {
         if (req instanceof TLRPC.TL_messages_readHistory) {
-            var readHistory = (TLRPC.TL_messages_readHistory) req;
-            var peer = readHistory.peer;
-            var maxId = readHistory.max_id;
+            TLRPC.TL_messages_readHistory readHistory = (TLRPC.TL_messages_readHistory) req;
+            TLRPC.InputPeer peer = readHistory.peer;
+            int maxId = readHistory.max_id;
 
-            var dialogId = getDialogId(peer);
+            long dialogId = getDialogId(peer);
 
             return new Pair<>(dialogId, maxId);
         } else if (req instanceof TLRPC.TL_messages_readDiscussion) {
-            var readDiscussion = (TLRPC.TL_messages_readDiscussion) req;
-            var peer = readDiscussion.peer;
-            var maxId = readDiscussion.read_max_id;
+            TLRPC.TL_messages_readDiscussion readDiscussion = (TLRPC.TL_messages_readDiscussion) req;
+            TLRPC.InputPeer peer = readDiscussion.peer;
+            int maxId = readDiscussion.read_max_id;
 
-            var dialogId = getDialogId(peer);
+            long dialogId = getDialogId(peer);
 
             return new Pair<>(dialogId, maxId);
         } else if (req instanceof TLRPC.TL_channels_readHistory) {
-            var readHistory = (TLRPC.TL_channels_readHistory) req;
-            var peer = readHistory.channel;
-            var maxId = readHistory.max_id;
+            TLRPC.TL_channels_readHistory readHistory = (TLRPC.TL_channels_readHistory) req;
+            TLRPC.InputChannel peer = readHistory.channel;
+            int maxId = readHistory.max_id;
 
-            var dialogId = getDialogId(peer);
+            long dialogId = getDialogId(peer);
 
             return new Pair<>(dialogId, maxId);
         }

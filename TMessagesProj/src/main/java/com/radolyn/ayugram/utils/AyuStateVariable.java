@@ -22,7 +22,7 @@ public class AyuStateVariable {
             }
 
             resetAfter -= 1;
-            var currentVal = val;
+            boolean currentVal = val;
 
             if (resetAfter == 0) {
                 val = false;
