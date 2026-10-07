@@ -1201,6 +1201,7 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_DELETE = 1;
     public final static int OPTION_FORWARD = 2;
     public final static int OPTION_COPY = 3;
+    public final static int OPTION_NG_EDIT_HISTORY = 9101;
     public final static int OPTION_SAVE_TO_GALLERY = 4;
     public final static int OPTION_APPLY_LOCALIZATION_OR_THEME = 5;
     public final static int OPTION_SHARE = 6;
@@ -2929,6 +2930,7 @@ public class ChatActivity extends BaseFragment implements
             .add(NotificationCenter.didLoadSendAsPeers)
             .add(NotificationCenter.closeChatActivity)
             .add(NotificationCenter.messagesDeleted)
+            .add(NotificationCenter.ngSaveMessagesKept)
             .add(NotificationCenter.historyCleared)
             .add(NotificationCenter.messageReceivedByServer)
             .add(NotificationCenter.messageReceivedByAck)
@@ -22252,6 +22254,10 @@ public class ChatActivity extends BaseFragment implements
             if (updated && chatAdapter != null) {
                 chatAdapter.notifyDataSetChanged(false);
             }
+        } else if (id == NotificationCenter.ngSaveMessagesKept) {
+            if (chatAdapter != null && args.length > 0 && args[0] instanceof Long && (Long) args[0] == dialog_id) {
+                chatAdapter.notifyDataSetChanged();
+            }
         } else if (id == NotificationCenter.messagesDeleted) {
             boolean scheduled = (Boolean) args[2];
             if (scheduled != (chatMode == MODE_SCHEDULED)) {
@@ -33372,6 +33378,12 @@ public class ChatActivity extends BaseFragment implements
                 DialogsActivity fragment = new DialogsActivity(args);
                 fragment.setDelegate(this);
                 presentFragment(fragment);
+                break;
+            }
+            case OPTION_NG_EDIT_HISTORY: {
+                if (selectedObject != null) {
+                    com.radolyn.ayugram.ngsave.NGSaveUi.showEditHistory(this, dialog_id, selectedObject.getId());
+                }
                 break;
             }
             case OPTION_COPY: {
@@ -45779,6 +45791,11 @@ public class ChatActivity extends BaseFragment implements
             deleteIconRes = R.drawable.msg_delete;
         }
 
+        if (com.radolyn.ayugram.ngsave.NGSave.hasEditHistory(currentAccount, dialog_id, selectedObject.getId())) {
+            items.add(LocaleController.getString(R.string.NGSaveEditHistory));
+            options.add(OPTION_NG_EDIT_HISTORY);
+            icons.add(R.drawable.msg_edit);
+        }
         if (type == -1) {
             if ((selectedObject.type == MessageObject.TYPE_TEXT || selectedObject.type == MessageObject.TYPE_ARTICLE || selectedObject.isAnimatedEmoji() || selectedObject.isAnimatedEmojiStickers() || getMessageCaption(selectedObject, selectedObjectGroup) != null) && (!noforwardsOrPaidMedia || isEphemeral) && !message.isExpiredStory()) {
                 items.add(LocaleController.getString(R.string.Copy));

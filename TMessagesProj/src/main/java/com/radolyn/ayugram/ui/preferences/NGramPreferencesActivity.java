@@ -13,6 +13,8 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.radolyn.ayugram.ngsave.NGSavePreferencesActivity;
+
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -33,11 +35,13 @@ public class NGramPreferencesActivity extends BaseFragment {
     private int rowCount;
     private int headerRow;
     private int ghostRow;
+    private int savedRow;
 
     private void updateRows() {
         rowCount = 0;
         headerRow = rowCount++;
         ghostRow = rowCount++;
+        savedRow = rowCount++;
     }
 
     @Override
@@ -73,6 +77,8 @@ public class NGramPreferencesActivity extends BaseFragment {
         listView.setOnItemClickListener((view, position) -> {
             if (position == ghostRow) {
                 presentFragment(new GhostPreferencesActivity());
+            } else if (position == savedRow) {
+                presentFragment(new NGSavePreferencesActivity());
             }
         });
 
@@ -99,7 +105,10 @@ public class NGramPreferencesActivity extends BaseFragment {
                 ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.NGramSettings));
             } else if (position == ghostRow) {
                 ((TextCell) holder.itemView).setTextAndColorfulIcon(
-                        LocaleController.getString(R.string.AyuGhostSettings), R.drawable.ayu_ghost, 0xFF9B6BFF, false);
+                        LocaleController.getString(R.string.AyuGhostSettings), R.drawable.ayu_ghost, 0xFF9B6BFF, true);
+            } else if (position == savedRow) {
+                ((TextCell) holder.itemView).setTextAndColorfulIcon(
+                        LocaleController.getString(R.string.NGSaveSettings), R.drawable.msg_delete, 0xFFFF6B6B, false);
             }
         }
 

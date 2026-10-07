@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="NGSaveSettings">Сохранение удалённого</string>
+  <string name="NGSaveHeaderDeleted">Удалённые сообщения</string>
+  <string name="NGSaveDeleted">Сохранять удалённые сообщения</string>
+  <string name="NGSaveDeletedInfo">Если сообщение удалил кто-то другой, оно остаётся в чате с пометкой «удалено». Сообщения, которые вы удаляете сами, удаляются как обычно.</string>
+  <string name="NGSaveHeaderChats">Где сохранять</string>
+  <string name="NGSaveInPrivate">Личные чаты</string>
+  <string name="NGSaveInBots">Боты</string>
+  <string name="NGSaveInGroups">Группы</string>
+  <string name="NGSaveInChannels">Каналы</string>
+  <string name="NGSaveKeepCleared">Чаты, очищенные собеседником</string>
+  <string name="NGSaveChatsInfo">Секретные чаты не сохраняются никогда. Если собеседник удалил весь чат, его сообщения тоже останутся.</string>
+  <string name="NGSaveHeaderContent">Что сохранять</string>
+  <string name="NGSaveKText">Текстовые сообщения</string>
+  <string name="NGSaveKPhoto">Фото</string>
+  <string name="NGSaveKVideo">Видео</string>
+  <string name="NGSaveKVoice">Голосовые и кружки</string>
+  <string name="NGSaveKFile">Файлы и музыка</string>
+  <string name="NGSaveKSticker">Стикеры</string>
+  <string name="NGSaveKGif">GIF</string>
+  <string name="NGSaveKOther">Прочее (опросы, геопозиция, контакты)</string>
+  <string name="NGSaveContentInfo">Сохраняются только сообщения отмеченных типов. Медиа, которое не было загружено до удаления, с сервера уже не загрузить.</string>
+  <string name="NGSaveHeaderDisplay">Внешний вид</string>
+  <string name="NGSaveShowMarker">Помечать удалённые сообщения</string>
+  <string name="NGSaveMarkerStyle">Вид пометки</string>
+  <string name="NGSaveMarkerText">Текст</string>
+  <string name="NGSaveMarkerIcon">Значок</string>
+  <string name="NGSaveMarkerBoth">Значок и текст</string>
+  <string name="NGSaveDisplayInfo">Пометка показывается рядом со временем сообщения.</string>
+  <string name="NGSaveDeletedMarker">удалено</string>
+  <string name="NGSaveHeaderEdits">История изменений</string>
+  <string name="NGSaveEdits">Сохранять историю изменений</string>
+  <string name="NGSaveEditsInfo">Прежние версии отредактированных сообщений сохраняются. Нажмите и удерживайте изменённое сообщение и выберите «История изменений».</string>
+  <string name="NGSaveEditHistory">История изменений</string>
+  <string name="NGSaveEditEmpty">Сохранённых версий нет.</string>
+  <string name="NGSaveEditNoText">(без текста)</string>
+  <string name="NGSaveEditMediaChanged">(вложение было изменено)</string>
+  <string name="NGSaveHeaderData">Сохранённые данные</string>
+  <string name="NGSaveClearEdits">Очистить историю изменений</string>
+  <string name="NGSaveClearMarks">Забыть пометки «удалено»</string>
+  <string name="NGSaveClearAll">Очистить всё</string>
+  <string name="NGSaveDataInfo">Сохранённые сообщения остаются в чате. Очистка пометок убирает только надпись «удалено», сами сообщения не удаляются.</string>
+  <string name="NGSaveClearTitle">Очистка сохранённых данных</string>
+  <string name="NGSaveClearMessage">Это действие нельзя отменить.</string>
+  <string name="NGSaveCleared">Готово</string>
+</resources>

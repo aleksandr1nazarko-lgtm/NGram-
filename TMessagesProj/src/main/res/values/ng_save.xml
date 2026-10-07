@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="NGSaveSettings">Save deleted</string>
+  <string name="NGSaveHeaderDeleted">Deleted messages</string>
+  <string name="NGSaveDeleted">Keep deleted messages</string>
+  <string name="NGSaveDeletedInfo">When someone else deletes a message, it stays in the chat and is marked as deleted. Messages you delete yourself are removed as usual.</string>
+  <string name="NGSaveHeaderChats">Where to keep</string>
+  <string name="NGSaveInPrivate">Private chats</string>
+  <string name="NGSaveInBots">Bots</string>
+  <string name="NGSaveInGroups">Groups</string>
+  <string name="NGSaveInChannels">Channels</string>
+  <string name="NGSaveKeepCleared">Chats cleared by the other side</string>
+  <string name="NGSaveChatsInfo">Secret chats are never saved. If the other person deletes the whole chat, its messages are kept too.</string>
+  <string name="NGSaveHeaderContent">What to keep</string>
+  <string name="NGSaveKText">Text messages</string>
+  <string name="NGSaveKPhoto">Photos</string>
+  <string name="NGSaveKVideo">Videos</string>
+  <string name="NGSaveKVoice">Voice and round messages</string>
+  <string name="NGSaveKFile">Files and music</string>
+  <string name="NGSaveKSticker">Stickers</string>
+  <string name="NGSaveKGif">GIFs</string>
+  <string name="NGSaveKOther">Other (polls, locations, contacts)</string>
+  <string name="NGSaveContentInfo">Only messages of the checked types are kept. Media that was not downloaded before the deletion can no longer be loaded from the server.</string>
+  <string name="NGSaveHeaderDisplay">Appearance</string>
+  <string name="NGSaveShowMarker">Mark deleted messages</string>
+  <string name="NGSaveMarkerStyle">Marker style</string>
+  <string name="NGSaveMarkerText">Text</string>
+  <string name="NGSaveMarkerIcon">Icon</string>
+  <string name="NGSaveMarkerBoth">Icon and text</string>
+  <string name="NGSaveDisplayInfo">The marker is shown next to the time of the message.</string>
+  <string name="NGSaveDeletedMarker">deleted</string>
+  <string name="NGSaveHeaderEdits">Edit history</string>
+  <string name="NGSaveEdits">Save edit history</string>
+  <string name="NGSaveEditsInfo">Previous versions of edited messages are saved. Long-press an edited message and choose Edit history.</string>
+  <string name="NGSaveEditHistory">Edit history</string>
+  <string name="NGSaveEditEmpty">No saved versions.</string>
+  <string name="NGSaveEditNoText">(no text)</string>
+  <string name="NGSaveEditMediaChanged">(the attachment was changed)</string>
+  <string name="NGSaveHeaderData">Saved data</string>
+  <string name="NGSaveClearEdits">Clear edit history</string>
+  <string name="NGSaveClearMarks">Forget deleted markers</string>
+  <string name="NGSaveClearAll">Clear everything</string>
+  <string name="NGSaveDataInfo">Kept messages stay in the chat. Clearing markers only removes the deleted label and does not delete the messages.</string>
+  <string name="NGSaveClearTitle">Clear saved data</string>
+  <string name="NGSaveClearMessage">This cannot be undone.</string>
+  <string name="NGSaveCleared">Done</string>
+</resources>

@@ -16299,6 +16299,7 @@ public class MessagesStorage extends BaseController {
                                     } else if (MessageObject.getDocument(oldMessage) != null && MessageObject.getDocument(message) != null) {
                                         sameMedia = MessageObject.getDocument(oldMessage).id == MessageObject.getDocument(message).id;
                                     }
+                                    com.radolyn.ayugram.ngsave.NGSave.onMessageEdited(currentAccount, MessageObject.getDialogId(message), oldMessage, message);
                                     if (oldMessage.out && !message.out) {
                                         message.out = oldMessage.out;
                                     }

@@ -9323,6 +9323,9 @@ public class MessagesController extends BaseController implements NotificationCe
         if ((messages == null || messages.isEmpty()) && taskId == 0) {
             return;
         }
+        if (messages != null && !messages.isEmpty() && !scheduled && !quickReplies && !welcomeMessages) {
+            com.radolyn.ayugram.ngsave.NGSave.onOwnDelete(currentAccount, dialogId, messages);
+        }
         ArrayList<Integer> toSend = null;
         long channelId;
         if (taskId == 0) {
@@ -17596,6 +17599,10 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     protected void deleteMessagesByPush(long dialogId, ArrayList<Integer> ids, long channelId) {
+        com.radolyn.ayugram.ngsave.NGSave.filterPush(currentAccount, channelId, ids);
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
         getMessagesStorage().getStorageQueue().postRunnable(() -> {
             AndroidUtilities.runOnUIThread(() -> {
                 getNotificationCenter().postNotificationName(NotificationCenter.messagesDeleted, ids, channelId, false);
@@ -21000,6 +21007,8 @@ public class MessagesController extends BaseController implements NotificationCe
         LongSparseIntArray markAsReadMessagesOutboxFinal = markAsReadMessagesOutbox;
         LongSparseArray<ArrayList<Integer>> markContentAsReadMessagesFinal = markContentAsReadMessages;
         SparseIntArray markAsReadEncryptedFinal = markAsReadEncrypted;
+        com.radolyn.ayugram.ngsave.NGSave.filterDeleted(currentAccount, deletedMessages);
+        com.radolyn.ayugram.ngsave.NGSave.filterClearHistory(currentAccount, clearHistoryMessages);
         LongSparseArray<ArrayList<Integer>> deletedMessagesFinal = deletedMessages;
         LongSparseArray<ArrayList<Integer>> deletedQuickRepliesMessagesFinal = deletedQuickReplyMessages;
         LongSparseArray<ArrayList<Integer>> scheduledDeletedMessagesFinal = scheduledDeletedMessages;
