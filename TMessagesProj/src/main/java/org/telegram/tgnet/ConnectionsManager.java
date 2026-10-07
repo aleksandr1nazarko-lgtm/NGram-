@@ -294,7 +294,7 @@ public class ConnectionsManager extends BaseController {
         if (preferences.contains("pushConnection")) {
             return preferences.getBoolean("pushConnection", true);
         } else {
-            return MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("backgroundConnection", false);
+            return MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("backgroundConnection", true);
         }
     }
 
@@ -427,6 +427,11 @@ public class ConnectionsManager extends BaseController {
                         }
                     };
                 }
+            }
+
+            // don't mark stories as viewed
+            if (!AyuConfig.sendReadStories && object instanceof org.telegram.tgnet.tl.TL_stories.TL_stories_readStories) {
+                return; // callers pass no callback for this request
             }
 
             // don't send read status

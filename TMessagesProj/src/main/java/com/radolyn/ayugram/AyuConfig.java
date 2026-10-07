@@ -19,6 +19,7 @@ public class AyuConfig {
     public static SharedPreferences.Editor editor;
 
     public static boolean sendReadPackets;
+    public static boolean sendReadStories;
     public static boolean sendOnlinePackets;
     public static boolean sendOfflinePacketAfterOnline;
     public static boolean sendUploadProgress;
@@ -41,6 +42,7 @@ public class AyuConfig {
 
             // defaults = normal (non-ghost) behaviour
             sendReadPackets = preferences.getBoolean("sendReadPackets", true);
+            sendReadStories = preferences.getBoolean("sendReadStories", true);
             sendOnlinePackets = preferences.getBoolean("sendOnlinePackets", true);
             sendUploadProgress = preferences.getBoolean("sendUploadProgress", true);
             sendOfflinePacketAfterOnline = preferences.getBoolean("sendOfflinePacketAfterOnline", false);
@@ -50,17 +52,20 @@ public class AyuConfig {
         }
     }
 
+    /** Ghost mode is "on" when every ghost option is on ("Send read status after reply" is independent). */
     public static boolean isGhostModeActive() {
-        return !sendReadPackets && !sendOnlinePackets && !sendUploadProgress && sendOfflinePacketAfterOnline;
+        return !sendReadPackets && !sendReadStories && !sendOnlinePackets && !sendUploadProgress && sendOfflinePacketAfterOnline;
     }
 
     public static void setGhostMode(boolean enabled) {
         sendReadPackets = !enabled;
+        sendReadStories = !enabled;
         sendOnlinePackets = !enabled;
         sendUploadProgress = !enabled;
         sendOfflinePacketAfterOnline = enabled;
 
         editor.putBoolean("sendReadPackets", sendReadPackets)
+                .putBoolean("sendReadStories", sendReadStories)
                 .putBoolean("sendOnlinePackets", sendOnlinePackets)
                 .putBoolean("sendUploadProgress", sendUploadProgress)
                 .putBoolean("sendOfflinePacketAfterOnline", sendOfflinePacketAfterOnline)

@@ -357,6 +357,17 @@ public class ApplicationLoader extends Application {
 
     public static void startPushService() {
         SharedPreferences preferences = MessagesController.getGlobalNotificationsSettings();
+        // NGram: keep the connection and service alive by default, so messages arrive without FCM
+        if (!preferences.contains("pushConnection") || !preferences.contains("pushService")) {
+            SharedPreferences.Editor seed = preferences.edit();
+            if (!preferences.contains("pushConnection")) {
+                seed.putBoolean("pushConnection", true);
+            }
+            if (!preferences.contains("pushService")) {
+                seed.putBoolean("pushService", true);
+            }
+            seed.apply();
+        }
         boolean enabled;
         if (preferences.contains("pushService")) {
             enabled = preferences.getBoolean("pushService", true);

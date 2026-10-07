@@ -24,6 +24,7 @@ import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.HeaderCell;
+import org.telegram.ui.Cells.ShadowSectionCell;
 import org.telegram.ui.Cells.TextCheckCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.BulletinFactory;
@@ -35,14 +36,17 @@ public class GhostPreferencesActivity extends BaseFragment {
     private static final int TYPE_HEADER = 0;
     private static final int TYPE_CHECK = 1;
     private static final int TYPE_INFO = 2;
+    private static final int TYPE_SPACER = 3;
 
     private RecyclerListView listView;
     private ListAdapter adapter;
 
     private int rowCount;
-    private int headerRow;
     private int ghostToggleRow;
+    private int spacerRow;
+    private int optionsHeaderRow;
     private int dontReadRow;
+    private int dontStoriesRow;
     private int dontOnlineRow;
     private int dontTypingRow;
     private int offlineAfterOnlineRow;
@@ -51,9 +55,11 @@ public class GhostPreferencesActivity extends BaseFragment {
 
     private void updateRows() {
         rowCount = 0;
-        headerRow = rowCount++;
         ghostToggleRow = rowCount++;
+        spacerRow = rowCount++;
+        optionsHeaderRow = rowCount++;
         dontReadRow = rowCount++;
+        dontStoriesRow = rowCount++;
         dontOnlineRow = rowCount++;
         dontTypingRow = rowCount++;
         offlineAfterOnlineRow = rowCount++;
@@ -102,6 +108,9 @@ public class GhostPreferencesActivity extends BaseFragment {
                 AyuConfig.editor.putBoolean("sendReadPackets", AyuConfig.sendReadPackets ^= true).apply();
                 AyuState.setAllowReadPacket(false, -1);
                 adapter.notifyDataSetChanged();
+            } else if (position == dontStoriesRow) {
+                AyuConfig.editor.putBoolean("sendReadStories", AyuConfig.sendReadStories ^= true).apply();
+                adapter.notifyDataSetChanged();
             } else if (position == dontOnlineRow) {
                 AyuConfig.editor.putBoolean("sendOnlinePackets", AyuConfig.sendOnlinePackets ^= true).apply();
                 adapter.notifyDataSetChanged();
@@ -132,6 +141,8 @@ public class GhostPreferencesActivity extends BaseFragment {
             } else if (viewType == TYPE_CHECK) {
                 view = new TextCheckCell(getContext());
                 view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+            } else if (viewType == TYPE_SPACER) {
+                view = new ShadowSectionCell(getContext(), 16);
             } else {
                 view = new TextInfoPrivacyCell(getContext());
             }
@@ -142,7 +153,7 @@ public class GhostPreferencesActivity extends BaseFragment {
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
             switch (holder.getItemViewType()) {
                 case TYPE_HEADER:
-                    ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.AyuGhostEssentialsHeader));
+                    ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.AyuGhostOptionsHeader));
                     break;
                 case TYPE_INFO:
                     ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.AyuGhostInfo));
@@ -150,9 +161,11 @@ public class GhostPreferencesActivity extends BaseFragment {
                 case TYPE_CHECK:
                     TextCheckCell cell = (TextCheckCell) holder.itemView;
                     if (position == ghostToggleRow) {
-                        cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostToggle), AyuConfig.isGhostModeActive(), true);
+                        cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostToggle), AyuConfig.isGhostModeActive(), false);
                     } else if (position == dontReadRow) {
                         cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostDontRead), !AyuConfig.sendReadPackets, true);
+                    } else if (position == dontStoriesRow) {
+                        cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostDontStories), !AyuConfig.sendReadStories, true);
                     } else if (position == dontOnlineRow) {
                         cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostDontOnline), !AyuConfig.sendOnlinePackets, true);
                     } else if (position == dontTypingRow) {
@@ -178,10 +191,12 @@ public class GhostPreferencesActivity extends BaseFragment {
 
         @Override
         public int getItemViewType(int position) {
-            if (position == headerRow) {
+            if (position == optionsHeaderRow) {
                 return TYPE_HEADER;
             } else if (position == infoRow) {
                 return TYPE_INFO;
+            } else if (position == spacerRow) {
+                return TYPE_SPACER;
             }
             return TYPE_CHECK;
         }

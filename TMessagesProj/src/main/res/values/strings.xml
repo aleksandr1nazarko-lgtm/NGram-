@@ -11232,7 +11232,9 @@
     <string name="AyuGhostDontTyping">Don\'t send typing</string>
     <string name="AyuGhostOfflineAfterOnline">Immediate offline after online</string>
     <string name="AyuGhostMarkReadAfterSend">Send read status after reply</string>
-    <string name="AyuGhostInfo">Ghost mode turns on all four options above at once. Each option can also be changed separately.</string>
+    <string name="AyuGhostInfo">The Ghost mode switch turns on all options below at once. Each option can also be changed separately.</string>
+    <string name="AyuGhostDontStories">Don\'t show story views</string>
+    <string name="AyuGhostOptionsHeader">Options</string>
     <string name="AyuGhostEnabled">Ghost mode turned on</string>
     <string name="AyuGhostDisabled">Ghost mode turned off</string>
     <string name="AyuGhostReadUntil">Read until</string>

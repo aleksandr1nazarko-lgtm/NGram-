@@ -264,7 +264,7 @@
     <string name="RemindDayAt">\'Отправить\' d MMM \'в\' HH:mm</string>
     <string name="RemindDayYearAt">\'Напомнить\' d MMM yyyy \'в\' HH:mm</string>
     <string name="NGramSettings">NGram</string>
-    <string name="AyuGhostSettings">Ghost mode</string>
+    <string name="AyuGhostSettings">Режим призрака</string>
     <string name="AyuGhostEssentialsHeader">Режим призрака</string>
     <string name="AyuGhostToggle">Режим призрака</string>
     <string name="AyuGhostDontRead">Не читать сообщения</string>
@@ -272,7 +272,9 @@
     <string name="AyuGhostDontTyping">Не отправлять «печатает»</string>
     <string name="AyuGhostOfflineAfterOnline">Сразу «офлайн» после «онлайн»</string>
     <string name="AyuGhostMarkReadAfterSend">Читать после ответа</string>
-    <string name="AyuGhostInfo">Режим призрака включает сразу все четыре опции выше. Каждую опцию можно менять отдельно.</string>
+    <string name="AyuGhostInfo">Переключатель «Режим призрака» включает сразу все опции ниже. Каждую опцию можно менять отдельно.</string>
+    <string name="AyuGhostDontStories">Не показывать просмотр историй</string>
+    <string name="AyuGhostOptionsHeader">Параметры</string>
     <string name="AyuGhostEnabled">Режим призрака включён</string>
     <string name="AyuGhostDisabled">Режим призрака выключен</string>
     <string name="AyuGhostReadUntil">Прочитать до</string>
