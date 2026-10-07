@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+  <string name="NGramSettings">NGram</string>
   <string name="AyuGhostSettings">Ghost mode</string>
   <string name="AyuGhostEssentialsHeader">Ghost essentials</string>
   <string name="AyuGhostToggle">Ghost mode</string>
@@ -12,4 +13,5 @@
   <string name="AyuGhostEnabled">Ghost mode turned on</string>
   <string name="AyuGhostDisabled">Ghost mode turned off</string>
   <string name="AyuGhostReadUntil">Read until</string>
+  <string name="NGramSettingsInfo">Ghost mode</string>
 </resources>

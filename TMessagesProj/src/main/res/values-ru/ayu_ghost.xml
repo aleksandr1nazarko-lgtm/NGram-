@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <string name="AyuGhostSettings">Режим призрака</string>
+  <string name="NGramSettings">NGram</string>
+  <string name="AyuGhostSettings">Ghost mode</string>
   <string name="AyuGhostEssentialsHeader">Режим призрака</string>
   <string name="AyuGhostToggle">Режим призрака</string>
   <string name="AyuGhostDontRead">Не читать сообщения</string>
@@ -12,4 +13,5 @@
   <string name="AyuGhostEnabled">Режим призрака включён</string>
   <string name="AyuGhostDisabled">Режим призрака выключен</string>
   <string name="AyuGhostReadUntil">Прочитать до</string>
+  <string name="NGramSettingsInfo">Ghost mode</string>
 </resources>
