@@ -1,0 +1,96 @@
+name: Fix ghost mode strings (LOC_ERR)
+
+# Запуск вручную: Actions -> Fix ghost mode strings (LOC_ERR) -> Run workflow.
+# Переносит строки режима призрака из ayu_ghost.xml в strings.xml, потому что
+# сборка берёт текст только из strings.xml (см. TelegramStringsTask). Коммитит в main.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Merge ayu_ghost.xml into strings.xml
+        run: |
+          set -e
+          cat > /tmp/merge_strings.py <<'PYEOF'
+          import re
+          import xml.etree.ElementTree as ET
+
+          def load_strings(path):
+              tree = ET.parse(path)
+              root = tree.getroot()
+              out = []
+              for el in root.findall("string"):
+                  name = el.get("name")
+                  # сохраняем исходный XML-текст элемента как есть (с escape-последовательностями)
+                  inner = (el.text or "")
+                  out.append((name, inner))
+              return out
+
+          def existing_names(path):
+              content = open(path, encoding="utf-8").read()
+              return set(re.findall(r'<string\s+name="([^"]+)"', content))
+
+          def merge(main_path, ghost_path):
+              if not __import__("os").path.exists(ghost_path):
+                  print(f"skip (no file): {ghost_path}")
+                  return False
+
+              have = existing_names(main_path)
+              new_entries = load_strings(ghost_path)
+
+              additions = []
+              for name, text in new_entries:
+                  if name in have:
+                      continue
+                  additions.append(f'    <string name="{name}">{text}</string>')
+
+              if not additions:
+                  print(f"nothing new to merge from {ghost_path}")
+                  return False
+
+              content = open(main_path, encoding="utf-8").read()
+              insertion = "\n".join(additions) + "\n</resources>"
+              assert content.rstrip().endswith("</resources>"), f"unexpected tail in {main_path}"
+              new_content = content.rstrip()
+              new_content = new_content[: -len("</resources>")] + "\n".join(additions) + "\n</resources>\n"
+              open(main_path, "w", encoding="utf-8").write(new_content)
+              print(f"merged {len(additions)} strings into {main_path}")
+              return True
+
+          changed = False
+          changed |= merge(
+              "TMessagesProj/src/main/res/values/strings.xml",
+              "TMessagesProj/src/main/res/values/ayu_ghost.xml",
+          )
+          changed |= merge(
+              "TMessagesProj/src/main/res/values-ru/strings.xml",
+              "TMessagesProj/src/main/res/values-ru/ayu_ghost.xml",
+          )
+
+          if not changed:
+              print("NOTHING_CHANGED")
+          PYEOF
+          python3 /tmp/merge_strings.py | tee /tmp/merge_log.txt
+
+          # Удаляем теперь уже пустые по смыслу ayu_ghost.xml (их содержимое переехало в strings.xml).
+          # drawable/ayu_ghost.xml НЕ трогаем — иконка не имеет отношения к этой проблеме.
+          rm -f TMessagesProj/src/main/res/values/ayu_ghost.xml
+          rm -f TMessagesProj/src/main/res/values-ru/ayu_ghost.xml
+
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "Fix ghost mode LOC_ERR: merge ayu_ghost.xml strings into strings.xml"
+            git push origin HEAD
+          fi
