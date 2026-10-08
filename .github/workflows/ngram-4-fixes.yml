@@ -1,0 +1,143 @@
+name: NGram 4 - Fix empty strings, duplicate button, old logo
+
+# Запуск: Actions -> NGram 4 - Fix empty strings, duplicate button, old logo -> Run workflow.
+# Нужны уже выполненные NGram 1/2/3. Коммитит в main.
+#
+# Чинит:
+# 1) Пустой пункт "NGram" и пустые пункты в "Ghost mode": сборщик строк Telegram (TelegramStringsTask)
+#    помечает ЛЮБУЮ строку, которая лежит в strings.xml, на вырезание из обычных Android-ресурсов
+#    resource shrinker'ом — он думает, что текст достаточно хранить в своём бинарном формате.
+#    Но NGStr (и часть экранов NGram) читают текст именно через обычные Android-ресурсы, а
+#    shrinker в релизной сборке успевает вырезать их раньше, чем NGStr успевает их прочитать.
+#    Решение: доп. правило в buildSrc, которое запрещает shrinker'у трогать строки Ayu*/NGram*/NGSave*/NG*.
+# 2) Две одинаковые кнопки "Edit history": один и тот же блок кода был вставлен дважды.
+# 3) Шапка со словом "Telegram": остался старый векторный telegram_logo_2.xml рядом с новыми
+#    PNG-картинками логотипа "N" с тем же именем — система иногда выбирает старый файл.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fix 1 - don't let the resource shrinker strip NGram strings
+        run: |
+          set -e
+          cat > /tmp/ng_fix_strings_task.py <<'PYEOF'
+          import re
+          import sys
+
+          path = "buildSrc/src/main/kotlin/org/telegram/tasks/TelegramStringsTask.kt"
+          text = open(path, encoding="utf-8").read()
+
+          if "GENERATED_EXCLUSION_PREFIXES" in text:
+              print("already patched: TelegramStringsTask.kt (companion object)")
+          else:
+              lines = text.split("\n")
+              anchor_idx = None
+              for i, line in enumerate(lines):
+                  if re.match(r"\s*private val STABLE_IDS_EXCLUSIONS\s*=\s*setOf\(", line):
+                      anchor_idx = i
+                      break
+              if anchor_idx is None:
+                  sys.exit("ANCHOR ERROR: 'private val STABLE_IDS_EXCLUSIONS = setOf(' not found in " + path)
+              indent = re.match(r"\s*", lines[anchor_idx]).group(0)
+              insertion = [
+                  "",
+                  indent + "// NGram: custom strings (Ghost mode, Save deleted, Local premium, Local banners, ...) are",
+                  indent + "// read directly from plain Android resources (see NGStr.java), unlike stock Telegram",
+                  indent + "// strings which only go through the generated localization_*.bin bundle. The resource",
+                  indent + "// shrinker must never remove them, or NGStr.get() starts returning empty text.",
+                  indent + "private val GENERATED_EXCLUSION_PREFIXES = listOf(",
+                  indent + "    \"Ayu\",",
+                  indent + "    \"NGram\",",
+                  indent + "    \"NGSave\",",
+                  indent + "    \"NG\"",
+                  indent + ")",
+              ]
+              lines[anchor_idx:anchor_idx] = insertion
+              text = "\n".join(lines)
+              open(path, "w", encoding="utf-8").write(text)
+              print("patched: TelegramStringsTask.kt (companion object)")
+
+          text = open(path, encoding="utf-8").read()
+          if "GENERATED_EXCLUSION_PREFIXES.any" in text:
+              print("already patched: TelegramStringsTask.kt (discard filter)")
+          else:
+              lines = text.split("\n")
+              target_idx = None
+              for i, line in enumerate(lines):
+                  if "filterNot { GENERATED_EXCLUSIONS.contains(it) }" in line:
+                      target_idx = i
+                      break
+              if target_idx is None:
+                  sys.exit("ANCHOR ERROR: discard filter line not found in " + path)
+              indent = re.match(r"\s*", lines[target_idx]).group(0)
+              replacement = [
+                  indent + ".filterNot { name ->",
+                  indent + "    GENERATED_EXCLUSIONS.contains(name) ||",
+                  indent + "            GENERATED_EXCLUSION_PREFIXES.any { name.startsWith(it) }",
+                  indent + "}",
+              ]
+              lines[target_idx:target_idx + 1] = replacement
+              text = "\n".join(lines)
+              open(path, "w", encoding="utf-8").write(text)
+              print("patched: TelegramStringsTask.kt (discard filter)")
+          PYEOF
+          python3 /tmp/ng_fix_strings_task.py
+
+      - name: Fix 2 - remove duplicate "Edit history" menu row
+        run: |
+          set -e
+          cat > /tmp/ng_fix_dup_edit_history.py <<'PYEOF'
+          import sys
+
+          path = "TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java"
+          s = open(path, encoding="utf-8").read()
+
+          block = ('        if (com.radolyn.ayugram.ngsave.NGSave.hasEditHistory(currentAccount, dialog_id, selectedObject.getId())) {\n'
+                    '            items.add(com.radolyn.ayugram.ngsave.NGStr.get(R.string.NGSaveEditHistory));\n'
+                    '            options.add(OPTION_NG_EDIT_HISTORY);\n'
+                    '            icons.add(R.drawable.msg_edit);\n'
+                    '        }\n')
+
+          count = s.count(block)
+          if count == 1:
+              print("already fixed: only one Edit history row present")
+          elif count >= 2:
+              # keep exactly one copy, drop the rest
+              s = s.replace(block, "", count - 1)
+              open(path, "w", encoding="utf-8").write(s)
+              print("patched: removed %d duplicate Edit history row(s)" % (count - 1))
+          else:
+              sys.exit("ANCHOR ERROR: Edit history block not found in " + path)
+          PYEOF
+          python3 /tmp/ng_fix_dup_edit_history.py
+
+      - name: Fix 3 - remove the stale "Telegram" logo vector
+        run: |
+          set -e
+          OLD=TMessagesProj/src/main/res/drawable/telegram_logo_2.xml
+          if [ -f "$OLD" ]; then
+            rm -f "$OLD"
+            echo "removed: $OLD"
+          else
+            echo "already removed: $OLD"
+          fi
+          echo "kept (this is the real NGram logo):"
+          ls TMessagesProj/src/main/res/drawable-*/telegram_logo_2.png 2>/dev/null || echo "WARNING: PNG logo set not found, header may end up blank!"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "NGram 4 - fix empty NGram strings, duplicate Edit history row, stale Telegram logo" || echo "nothing to commit"
+          git pull --rebase --autostash || true
+          git push origin HEAD
