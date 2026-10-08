@@ -923,7 +923,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean isPremiumUser(TLRPC.User currentUser) {
-        return currentUser != null && currentUser.premium && !isSupportUser(currentUser);
+        return currentUser != null && (currentUser.premium || currentUser.id == getUserConfig().getClientUserId() && com.radolyn.ayugram.ngsave.NGPremium.enabled()) && !isSupportUser(currentUser);
     }
 
     public boolean didPressTranscribeButtonEnough() {
