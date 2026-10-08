@@ -276,5 +276,5 @@
     <string name="AyuGhostEnabled">Режим призрака включён</string>
     <string name="AyuGhostDisabled">Режим призрака выключен</string>
     <string name="AyuGhostReadUntil">Прочитать до</string>
-    <string name="NGramSettingsInfo">Ghost mode</string>
+    <string name="NGramSettingsInfo">Settings NGram</string>
 </resources>

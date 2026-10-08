@@ -2,53 +2,41 @@
  * NGram: own small SQLite database for the "Save deleted" feature
  * (deleted-message marks and edit history). Independent from Telegram's message database.
  */
-
 package com.radolyn.ayugram.ngsave;
-
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
-
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
-
 import java.util.ArrayList;
-
 public class NGSaveDb extends SQLiteOpenHelper {
-
     public static class Edit {
         public long editedAt;   // when we noticed the edit (unix seconds)
         public int versionDate; // date of the old version (unix seconds)
         public String text;
         public boolean hadMedia;
     }
-
     private static NGSaveDb instance;
-
     public static synchronized NGSaveDb getInstance() {
         if (instance == null) {
             instance = new NGSaveDb(ApplicationLoader.applicationContext);
         }
         return instance;
     }
-
     private NGSaveDb(Context context) {
         super(context, "ngsave.db", null, 1);
     }
-
     @Override
     public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE deleted_marks (acc INTEGER, dialog INTEGER, mid INTEGER, ts INTEGER, PRIMARY KEY (acc, dialog, mid))");
         db.execSQL("CREATE TABLE edits (id INTEGER PRIMARY KEY AUTOINCREMENT, acc INTEGER, dialog INTEGER, mid INTEGER, ts INTEGER, version_date INTEGER, text TEXT, had_media INTEGER)");
         db.execSQL("CREATE INDEX edits_idx ON edits (acc, dialog, mid)");
     }
-
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
     }
-
     public synchronized void insertDeleted(int acc, long dialog, int mid, long ts) {
         try {
             ContentValues v = new ContentValues();
@@ -61,7 +49,6 @@ public class NGSaveDb extends SQLiteOpenHelper {
             FileLog.e(e);
         }
     }
-
     public synchronized void deleteDeleted(int acc, long dialog, int mid) {
         try {
             getWritableDatabase().delete("deleted_marks", "acc = ? AND dialog = ? AND mid = ?",
@@ -70,7 +57,6 @@ public class NGSaveDb extends SQLiteOpenHelper {
             FileLog.e(e);
         }
     }
-
     /** @return rows of {acc, dialog, mid} */
     public synchronized ArrayList<long[]> loadDeleted() {
         ArrayList<long[]> result = new ArrayList<>();
@@ -89,7 +75,6 @@ public class NGSaveDb extends SQLiteOpenHelper {
         }
         return result;
     }
-
     public synchronized void insertEdit(int acc, long dialog, int mid, long ts, int versionDate, String text, boolean hadMedia) {
         try {
             ContentValues v = new ContentValues();
@@ -105,7 +90,6 @@ public class NGSaveDb extends SQLiteOpenHelper {
             FileLog.e(e);
         }
     }
-
     public synchronized boolean hasEdits(int acc, long dialog, int mid) {
         Cursor c = null;
         try {
@@ -121,7 +105,6 @@ public class NGSaveDb extends SQLiteOpenHelper {
             }
         }
     }
-
     /** Newest first. */
     public synchronized ArrayList<Edit> getEdits(int acc, long dialog, int mid) {
         ArrayList<Edit> result = new ArrayList<>();
@@ -146,7 +129,6 @@ public class NGSaveDb extends SQLiteOpenHelper {
         }
         return result;
     }
-
     public synchronized String getLastEditText(int acc, long dialog, int mid) {
         Cursor c = null;
         try {
@@ -162,7 +144,6 @@ public class NGSaveDb extends SQLiteOpenHelper {
             }
         }
     }
-
     public synchronized int count(String table) {
         Cursor c = null;
         try {
@@ -177,7 +158,6 @@ public class NGSaveDb extends SQLiteOpenHelper {
             }
         }
     }
-
     public synchronized void clearDeleted() {
         try {
             getWritableDatabase().delete("deleted_marks", null, null);
@@ -185,7 +165,6 @@ public class NGSaveDb extends SQLiteOpenHelper {
             FileLog.e(e);
         }
     }
-
     public synchronized void clearEdits() {
         try {
             getWritableDatabase().delete("edits", null, null);

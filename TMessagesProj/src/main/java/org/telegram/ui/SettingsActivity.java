@@ -689,7 +689,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             items.add(UItem.asShadow(null));
         }
 
-        items.add(SettingCell.Factory.of(9001, 0xFFB659FF, 0xFF617CFF, R.drawable.ayu_ghost, getString(R.string.NGramSettings), getString(R.string.NGramSettingsInfo)));
+        items.add(SettingCell.Factory.of(9001, 0xFFB659FF, 0xFF617CFF, R.drawable.ayu_ghost, com.radolyn.ayugram.ngsave.NGStr.get(R.string.NGramSettings), com.radolyn.ayugram.ngsave.NGStr.get(R.string.NGramSettingsInfo)));
         items.add(UItem.asShadow(null));
         items.add(SettingCell.Factory.of(1, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.SettingsAccount), getString(R.string.SettingsAccountInfo)));
         items.add(SettingCell.Factory.of(2, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.settings_chat, getString(R.string.SettingsChat), getString(R.string.SettingsChatInfo)));

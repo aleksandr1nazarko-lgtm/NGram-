@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <string name="NGSaveSettings">Сохранение удалённого</string>
+  <string name="NGSaveSettings">Save deleted</string>
   <string name="NGSaveHeaderDeleted">Удалённые сообщения</string>
   <string name="NGSaveDeleted">Сохранять удалённые сообщения</string>
   <string name="NGSaveDeletedInfo">Если сообщение удалил кто-то другой, оно остаётся в чате с пометкой «удалено». Сообщения, которые вы удаляете сами, удаляются как обычно.</string>
@@ -9,8 +9,9 @@
   <string name="NGSaveInBots">Боты</string>
   <string name="NGSaveInGroups">Группы</string>
   <string name="NGSaveInChannels">Каналы</string>
+  <string name="NGSaveInSecret">Секретные чаты</string>
   <string name="NGSaveKeepCleared">Чаты, очищенные собеседником</string>
-  <string name="NGSaveChatsInfo">Секретные чаты не сохраняются никогда. Если собеседник удалил весь чат, его сообщения тоже останутся.</string>
+  <string name="NGSaveChatsInfo">Если собеседник удалил весь чат, его сообщения тоже останутся. Сообщения, которые не успели дойти до этого устройства, восстановить нельзя.</string>
   <string name="NGSaveHeaderContent">Что сохранять</string>
   <string name="NGSaveKText">Текстовые сообщения</string>
   <string name="NGSaveKPhoto">Фото</string>

@@ -7,14 +7,10 @@
  *
  * The idea comes from AyuGram for Android (Radolyn Labs, https://github.com/AyuGram/AyuGram4A, GPL).
  */
-
 package com.radolyn.ayugram.ngsave;
-
 import android.os.SystemClock;
 import android.text.TextUtils;
-
 import androidx.collection.LongSparseArray;
-
 import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
@@ -30,7 +26,6 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLRPC;
-
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -39,9 +34,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-
 public class NGSave {
-
     private static final int KIND_TEXT = 0;
     private static final int KIND_PHOTO = 1;
     private static final int KIND_VIDEO = 2;
@@ -50,16 +43,12 @@ public class NGSave {
     private static final int KIND_STICKER = 5;
     private static final int KIND_GIF = 6;
     private static final int KIND_OTHER = 7;
-
     private static final long OWN_DELETE_TTL_MS = 10 * 60 * 1000L;
-
     /** Messages that the user deleted himself on this device: these must really be deleted. */
     private static final ConcurrentHashMap<String, Long> ownDeleted = new ConcurrentHashMap<>();
-
     /** account -> dialogId -> ids of messages that were kept after being deleted by someone else. */
     private static final ConcurrentHashMap<Long, Set<Integer>>[] marks = createMarks();
     private static volatile boolean marksLoaded;
-
     @SuppressWarnings("unchecked")
     private static ConcurrentHashMap<Long, Set<Integer>>[] createMarks() {
         ConcurrentHashMap<Long, Set<Integer>>[] arr = new ConcurrentHashMap[UserConfig.MAX_ACCOUNT_COUNT];
@@ -68,9 +57,7 @@ public class NGSave {
         }
         return arr;
     }
-
     // ------------------------------------------------------------------ marks cache
-
     private static void ensureMarksLoaded() {
         if (marksLoaded) {
             return;
@@ -85,7 +72,6 @@ public class NGSave {
             marksLoaded = true;
         }
     }
-
     private static void cacheAdd(int account, long dialogId, int mid) {
         if (account < 0 || account >= marks.length) {
             return;
@@ -100,7 +86,6 @@ public class NGSave {
         }
         set.add(mid);
     }
-
     private static void cacheRemove(int account, long dialogId, int mid) {
         if (account < 0 || account >= marks.length) {
             return;
@@ -110,7 +95,6 @@ public class NGSave {
             set.remove(mid);
         }
     }
-
     /** Called from the chat UI for every message cell. */
     public static boolean isMarked(int account, long dialogId, int mid) {
         try {
@@ -125,24 +109,20 @@ public class NGSave {
             return false;
         }
     }
-
     public static CharSequence markerText() {
         switch (NGSaveConfig.getMarkerStyle()) {
             case NGSaveConfig.MARKER_ICON:
                 return "\uD83D\uDDD1";
             case NGSaveConfig.MARKER_BOTH:
-                return "\uD83D\uDDD1 " + LocaleController.getString(R.string.NGSaveDeletedMarker);
+                return "\uD83D\uDDD1 " + NGStr.get(R.string.NGSaveDeletedMarker);
             default:
-                return LocaleController.getString(R.string.NGSaveDeletedMarker);
+                return NGStr.get(R.string.NGSaveDeletedMarker);
         }
     }
-
     // ------------------------------------------------------------------ own deletions
-
     private static String ownKey(int account, int mid, boolean channel) {
         return account + ":" + mid + ":" + (channel ? 1 : 0);
     }
-
     private static boolean isChannelDialog(int account, long dialogId) {
         if (dialogId >= 0 || DialogObject.isEncryptedDialog(dialogId)) {
             return false;
@@ -150,7 +130,6 @@ public class NGSave {
         TLRPC.Chat chat = MessagesController.getInstance(account).getChat(-dialogId);
         return ChatObject.isChannel(chat);
     }
-
     /** Hook: the user deletes messages himself. They must disappear for real. */
     public static void onOwnDelete(int account, long dialogId, ArrayList<Integer> ids) {
         try {
@@ -177,20 +156,16 @@ public class NGSave {
             FileLog.e(e);
         }
     }
-
     private static boolean isOwnDeleted(int account, int mid, boolean channel) {
         Long t = ownDeleted.get(ownKey(account, mid, channel));
         return t != null && SystemClock.elapsedRealtime() - t <= OWN_DELETE_TTL_MS;
     }
-
     // ------------------------------------------------------------------ deletion filtering
-
     private static class Found {
         long uid;
         int mid;
         TLRPC.Message msg;
     }
-
     /** Looks messages up in Telegram's database (synchronously). dialogId == 0 means "any non-channel dialog". */
     private static ArrayList<Found> lookup(int account, long dialogId, ArrayList<Integer> mids) {
         final ArrayList<Found> out = new ArrayList<>();
@@ -252,10 +227,9 @@ public class NGSave {
             return new ArrayList<>(out);
         }
     }
-
     private static boolean chatTypeEnabled(int account, long uid) {
         if (DialogObject.isEncryptedDialog(uid)) {
-            return false;
+            return NGSaveConfig.get(NGSaveConfig.IN_SECRET);
         }
         MessagesController mc = MessagesController.getInstance(account);
         if (uid > 0) {
@@ -271,7 +245,6 @@ public class NGSave {
         }
         return NGSaveConfig.get(NGSaveConfig.IN_GROUPS);
     }
-
     private static int kindOf(TLRPC.Message m) {
         TLRPC.MessageMedia media = m.media;
         if (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage) {
@@ -298,7 +271,6 @@ public class NGSave {
         }
         return KIND_OTHER;
     }
-
     private static boolean kindEnabled(int kind) {
         switch (kind) {
             case KIND_TEXT:
@@ -319,20 +291,18 @@ public class NGSave {
                 return NGSaveConfig.get(NGSaveConfig.K_OTHER);
         }
     }
-
     private static boolean shouldKeep(int account, long uid, TLRPC.Message msg) {
         if (msg instanceof TLRPC.TL_messageService) {
             return false;
         }
         return chatTypeEnabled(account, uid) && kindEnabled(kindOf(msg));
     }
-
     /**
      * Removes from {@code ids} everything that must be kept (and remembers it). What stays in the list
      * is deleted by Telegram as usual. {@code dialogKey} is 0 for ordinary (non-channel) updates.
      */
     private static void filterIds(int account, long dialogKey, ArrayList<Integer> ids) {
-        final boolean channel = dialogKey != 0;
+        final boolean channel = dialogKey != 0 && isChannelDialog(account, dialogKey);
         ArrayList<Integer> candidates = new ArrayList<>();
         ArrayList<Integer> remaining = new ArrayList<>();
         for (int a = 0, n = ids.size(); a < n; a++) {
@@ -376,7 +346,6 @@ public class NGSave {
             AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.ngSaveMessagesKept, dialogId));
         }
     }
-
     /** Hook for processUpdateArray: lists of deleted ids by dialog (0 = non-channel). Modified in place. */
     public static void filterDeleted(int account, LongSparseArray<ArrayList<Integer>> deleted) {
         try {
@@ -397,7 +366,21 @@ public class NGSave {
             FileLog.e(e);
         }
     }
-
+    /** Hook: the other side deleted messages of a secret chat (ids are local message ids). Modified in place. */
+    public static void filterSecret(int account, long dialogId, ArrayList<Integer> ids) {
+        try {
+            if (ids == null || ids.isEmpty() || !NGSaveConfig.get(NGSaveConfig.SAVE_DELETED) || !NGSaveConfig.get(NGSaveConfig.IN_SECRET)) {
+                return;
+            }
+            filterIds(account, dialogId, ids);
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
+    }
+    /** Hook: the other side cleared a whole secret chat. true = keep everything, do not clear. */
+    public static boolean keepSecretFlush(int account, long dialogId) {
+        return NGSaveConfig.get(NGSaveConfig.SAVE_DELETED) && NGSaveConfig.get(NGSaveConfig.IN_SECRET) && NGSaveConfig.get(NGSaveConfig.KEEP_CLEARED);
+    }
     /** Hook for push-driven deletions. Modified in place. */
     public static void filterPush(int account, long channelId, ArrayList<Integer> ids) {
         try {
@@ -409,7 +392,6 @@ public class NGSave {
             FileLog.e(e);
         }
     }
-
     /** Hook: "history of a dialog was cleared" updates. Dialogs we want to keep are removed from the array. */
     public static void filterClearHistory(int account, LongSparseIntArray cleared) {
         try {
@@ -426,9 +408,7 @@ public class NGSave {
             FileLog.e(e);
         }
     }
-
     // ------------------------------------------------------------------ edit history
-
     private static boolean sameMedia(TLRPC.Message o, TLRPC.Message n) {
         TLRPC.MessageMedia a = o.media;
         TLRPC.MessageMedia b = n.media;
@@ -445,14 +425,13 @@ public class NGSave {
         }
         return a.getClass() == b.getClass();
     }
-
     /** Hook: an already known message came back from the server changed. Runs on the storage thread. */
     public static void onMessageEdited(int account, long dialogId, TLRPC.Message oldMsg, TLRPC.Message newMsg) {
         try {
             if (!NGSaveConfig.get(NGSaveConfig.SAVE_EDITS) || oldMsg == null || newMsg == null) {
                 return;
             }
-            if (oldMsg instanceof TLRPC.TL_messageService || DialogObject.isEncryptedDialog(dialogId)) {
+            if (oldMsg instanceof TLRPC.TL_messageService) {
                 return;
             }
             boolean sameMedia = sameMedia(oldMsg, newMsg);
@@ -472,7 +451,6 @@ public class NGSave {
             FileLog.e(e);
         }
     }
-
     public static boolean hasEditHistory(int account, long dialogId, int mid) {
         try {
             return NGSaveDb.getInstance().hasEdits(account, dialogId, mid);
@@ -481,9 +459,7 @@ public class NGSave {
             return false;
         }
     }
-
     // ------------------------------------------------------------------ maintenance
-
     public static void clearAll() {
         NGSaveDb.getInstance().clearDeleted();
         NGSaveDb.getInstance().clearEdits();
@@ -491,11 +467,9 @@ public class NGSave {
             m.clear();
         }
     }
-
     public static void clearEdits() {
         NGSaveDb.getInstance().clearEdits();
     }
-
     public static void clearMarks() {
         NGSaveDb.getInstance().clearDeleted();
         for (ConcurrentHashMap<Long, Set<Integer>> m : marks) {

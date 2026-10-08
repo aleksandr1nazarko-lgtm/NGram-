@@ -11236,5 +11236,5 @@
     <string name="AyuGhostEnabled">Ghost mode turned on</string>
     <string name="AyuGhostDisabled">Ghost mode turned off</string>
     <string name="AyuGhostReadUntil">Read until</string>
-    <string name="NGramSettingsInfo">Ghost mode</string>
+    <string name="NGramSettingsInfo">Settings NGram</string>
 </resources>

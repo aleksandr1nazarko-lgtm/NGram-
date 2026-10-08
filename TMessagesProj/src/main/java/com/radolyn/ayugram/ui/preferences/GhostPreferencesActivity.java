@@ -71,7 +71,7 @@ public class GhostPreferencesActivity extends BaseFragment {
     public View createView(Context context) {
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
         actionBar.setAllowOverlayTitle(true);
-        actionBar.setTitle(LocaleController.getString(R.string.AyuGhostSettings));
+        actionBar.setTitle(com.radolyn.ayugram.ngsave.NGStr.get(R.string.AyuGhostSettings));
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
@@ -142,25 +142,25 @@ public class GhostPreferencesActivity extends BaseFragment {
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
             switch (holder.getItemViewType()) {
                 case TYPE_HEADER:
-                    ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.AyuGhostEssentialsHeader));
+                    ((HeaderCell) holder.itemView).setText(com.radolyn.ayugram.ngsave.NGStr.get(R.string.AyuGhostEssentialsHeader));
                     break;
                 case TYPE_INFO:
-                    ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.AyuGhostInfo));
+                    ((TextInfoPrivacyCell) holder.itemView).setText(com.radolyn.ayugram.ngsave.NGStr.get(R.string.AyuGhostInfo));
                     break;
                 case TYPE_CHECK:
                     TextCheckCell cell = (TextCheckCell) holder.itemView;
                     if (position == ghostToggleRow) {
-                        cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostToggle), AyuConfig.isGhostModeActive(), true);
+                        cell.setTextAndCheck(com.radolyn.ayugram.ngsave.NGStr.get(R.string.AyuGhostToggle), AyuConfig.isGhostModeActive(), true);
                     } else if (position == dontReadRow) {
-                        cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostDontRead), !AyuConfig.sendReadPackets, true);
+                        cell.setTextAndCheck(com.radolyn.ayugram.ngsave.NGStr.get(R.string.AyuGhostDontRead), !AyuConfig.sendReadPackets, true);
                     } else if (position == dontOnlineRow) {
-                        cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostDontOnline), !AyuConfig.sendOnlinePackets, true);
+                        cell.setTextAndCheck(com.radolyn.ayugram.ngsave.NGStr.get(R.string.AyuGhostDontOnline), !AyuConfig.sendOnlinePackets, true);
                     } else if (position == dontTypingRow) {
-                        cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostDontTyping), !AyuConfig.sendUploadProgress, true);
+                        cell.setTextAndCheck(com.radolyn.ayugram.ngsave.NGStr.get(R.string.AyuGhostDontTyping), !AyuConfig.sendUploadProgress, true);
                     } else if (position == offlineAfterOnlineRow) {
-                        cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostOfflineAfterOnline), AyuConfig.sendOfflinePacketAfterOnline, true);
+                        cell.setTextAndCheck(com.radolyn.ayugram.ngsave.NGStr.get(R.string.AyuGhostOfflineAfterOnline), AyuConfig.sendOfflinePacketAfterOnline, true);
                     } else if (position == markReadAfterSendRow) {
-                        cell.setTextAndCheck(LocaleController.getString(R.string.AyuGhostMarkReadAfterSend), AyuConfig.markReadAfterSend, false);
+                        cell.setTextAndCheck(com.radolyn.ayugram.ngsave.NGStr.get(R.string.AyuGhostMarkReadAfterSend), AyuConfig.markReadAfterSend, false);
                     }
                     break;
             }

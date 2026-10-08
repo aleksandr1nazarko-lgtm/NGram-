@@ -9,8 +9,9 @@
   <string name="NGSaveInBots">Bots</string>
   <string name="NGSaveInGroups">Groups</string>
   <string name="NGSaveInChannels">Channels</string>
+  <string name="NGSaveInSecret">Secret chats</string>
   <string name="NGSaveKeepCleared">Chats cleared by the other side</string>
-  <string name="NGSaveChatsInfo">Secret chats are never saved. If the other person deletes the whole chat, its messages are kept too.</string>
+  <string name="NGSaveChatsInfo">If the other person deletes the whole chat, its messages are kept too. Messages that never reached this device cannot be recovered.</string>
   <string name="NGSaveHeaderContent">What to keep</string>
   <string name="NGSaveKText">Text messages</string>
   <string name="NGSaveKPhoto">Photos</string>

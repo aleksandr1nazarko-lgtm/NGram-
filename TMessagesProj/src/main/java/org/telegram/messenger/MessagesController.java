@@ -6705,10 +6705,10 @@ public class MessagesController extends BaseController implements NotificationCe
         if (chat.migrated_to != null) {
             TLRPC.Chat migratedTo = getChat(chat.migrated_to.channel_id);
             if (migratedTo != null) {
-                return migratedTo.noforwards;
+                return false;
             }
         }
-        return chat.noforwards;
+        return false;
     }
 
     public boolean isChatNoForwards(long chatId) {
@@ -6728,7 +6728,7 @@ public class MessagesController extends BaseController implements NotificationCe
             return false;
         }
 
-        return userFull.noforwards_peer_enabled || userFull.noforwards_my_enabled;
+        return false;
     }
 
     public TLRPC.User getUser(Long id) {

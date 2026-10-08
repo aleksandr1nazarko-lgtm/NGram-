@@ -777,7 +777,7 @@ public class StoryEntry {
         if (messageObject == null || messageObject.isSponsored()) {
             return false;
         }
-        if (messageObject.messageOwner != null && messageObject.messageOwner.noforwards) {
+        if (messageObject.messageOwner != null && false) {
             return false;
         }
         if (messageObject.type == MessageObject.TYPE_POLL || messageObject.type == MessageObject.TYPE_CONTACT) {
