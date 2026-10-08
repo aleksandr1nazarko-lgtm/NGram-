@@ -1,0 +1,1729 @@
+name: NGram 1 - Save deleted, menu, tweaks
+# Запуск: Actions -> NGram 1 - Save deleted, menu, tweaks -> Run workflow. Запускать ПЕРВЫМ.
+# Меню NGram, Save deleted (в т.ч. секретные чаты), исправление LOC_ERR, скриншоты, пересылка, Read until, Telegram ID.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write files
+        run: |
+          set -e
+          mkdir -p "$(dirname 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGSaveConfig.java')"
+          cat > 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGSaveConfig.java' <<'NGEOF'
+          /*
+           * NGram: settings storage for the "Save deleted" feature.
+           * The idea (keeping deleted messages / edit history) comes from AyuGram for Android
+           * (Radolyn Labs, https://github.com/AyuGram/AyuGram4A, GPL). This is an independent implementation.
+           */
+          package com.radolyn.ayugram.ngsave;
+          import android.app.Activity;
+          import android.content.SharedPreferences;
+          import org.telegram.messenger.ApplicationLoader;
+          public class NGSaveConfig {
+              public static final String SAVE_DELETED = "saveDeleted";
+              public static final String IN_PRIVATE = "inPrivate";
+              public static final String IN_BOTS = "inBots";
+              public static final String IN_GROUPS = "inGroups";
+              public static final String IN_CHANNELS = "inChannels";
+              public static final String IN_SECRET = "inSecret";
+              public static final String K_TEXT = "kText";
+              public static final String K_PHOTO = "kPhoto";
+              public static final String K_VIDEO = "kVideo";
+              public static final String K_VOICE = "kVoice";
+              public static final String K_FILE = "kFile";
+              public static final String K_STICKER = "kSticker";
+              public static final String K_GIF = "kGif";
+              public static final String K_OTHER = "kOther";
+              public static final String KEEP_CLEARED = "keepCleared";
+              public static final String SHOW_MARKER = "showMarker";
+              public static final String SAVE_EDITS = "saveEdits";
+              public static final int MARKER_TEXT = 0;
+              public static final int MARKER_ICON = 1;
+              public static final int MARKER_BOTH = 2;
+              private static SharedPreferences preferences;
+              private static synchronized SharedPreferences prefs() {
+                  if (preferences == null) {
+                      preferences = ApplicationLoader.applicationContext.getSharedPreferences("ngsaveconfig", Activity.MODE_PRIVATE);
+                  }
+                  return preferences;
+              }
+              /** All options are ON by default. */
+              public static boolean get(String key) {
+                  return prefs().getBoolean(key, true);
+              }
+              public static void set(String key, boolean value) {
+                  prefs().edit().putBoolean(key, value).apply();
+              }
+              public static boolean toggle(String key) {
+                  boolean value = !get(key);
+                  set(key, value);
+                  return value;
+              }
+              public static int getMarkerStyle() {
+                  return prefs().getInt("markerStyle", MARKER_TEXT);
+              }
+              public static void setMarkerStyle(int style) {
+                  prefs().edit().putInt("markerStyle", style).apply();
+              }
+          }
+          NGEOF
+
+          mkdir -p "$(dirname 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGSaveDb.java')"
+          cat > 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGSaveDb.java' <<'NGEOF'
+          /*
+           * NGram: own small SQLite database for the "Save deleted" feature
+           * (deleted-message marks and edit history). Independent from Telegram's message database.
+           */
+          package com.radolyn.ayugram.ngsave;
+          import android.content.ContentValues;
+          import android.content.Context;
+          import android.database.Cursor;
+          import android.database.sqlite.SQLiteDatabase;
+          import android.database.sqlite.SQLiteOpenHelper;
+          import org.telegram.messenger.ApplicationLoader;
+          import org.telegram.messenger.FileLog;
+          import java.util.ArrayList;
+          public class NGSaveDb extends SQLiteOpenHelper {
+              public static class Edit {
+                  public long editedAt;   // when we noticed the edit (unix seconds)
+                  public int versionDate; // date of the old version (unix seconds)
+                  public String text;
+                  public boolean hadMedia;
+              }
+              private static NGSaveDb instance;
+              public static synchronized NGSaveDb getInstance() {
+                  if (instance == null) {
+                      instance = new NGSaveDb(ApplicationLoader.applicationContext);
+                  }
+                  return instance;
+              }
+              private NGSaveDb(Context context) {
+                  super(context, "ngsave.db", null, 1);
+              }
+              @Override
+              public void onCreate(SQLiteDatabase db) {
+                  db.execSQL("CREATE TABLE deleted_marks (acc INTEGER, dialog INTEGER, mid INTEGER, ts INTEGER, PRIMARY KEY (acc, dialog, mid))");
+                  db.execSQL("CREATE TABLE edits (id INTEGER PRIMARY KEY AUTOINCREMENT, acc INTEGER, dialog INTEGER, mid INTEGER, ts INTEGER, version_date INTEGER, text TEXT, had_media INTEGER)");
+                  db.execSQL("CREATE INDEX edits_idx ON edits (acc, dialog, mid)");
+              }
+              @Override
+              public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+              }
+              public synchronized void insertDeleted(int acc, long dialog, int mid, long ts) {
+                  try {
+                      ContentValues v = new ContentValues();
+                      v.put("acc", acc);
+                      v.put("dialog", dialog);
+                      v.put("mid", mid);
+                      v.put("ts", ts);
+                      getWritableDatabase().insertWithOnConflict("deleted_marks", null, v, SQLiteDatabase.CONFLICT_IGNORE);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+              public synchronized void deleteDeleted(int acc, long dialog, int mid) {
+                  try {
+                      getWritableDatabase().delete("deleted_marks", "acc = ? AND dialog = ? AND mid = ?",
+                              new String[]{String.valueOf(acc), String.valueOf(dialog), String.valueOf(mid)});
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+              /** @return rows of {acc, dialog, mid} */
+              public synchronized ArrayList<long[]> loadDeleted() {
+                  ArrayList<long[]> result = new ArrayList<>();
+                  Cursor c = null;
+                  try {
+                      c = getReadableDatabase().rawQuery("SELECT acc, dialog, mid FROM deleted_marks", null);
+                      while (c.moveToNext()) {
+                          result.add(new long[]{c.getLong(0), c.getLong(1), c.getLong(2)});
+                      }
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  } finally {
+                      if (c != null) {
+                          c.close();
+                      }
+                  }
+                  return result;
+              }
+              public synchronized void insertEdit(int acc, long dialog, int mid, long ts, int versionDate, String text, boolean hadMedia) {
+                  try {
+                      ContentValues v = new ContentValues();
+                      v.put("acc", acc);
+                      v.put("dialog", dialog);
+                      v.put("mid", mid);
+                      v.put("ts", ts);
+                      v.put("version_date", versionDate);
+                      v.put("text", text);
+                      v.put("had_media", hadMedia ? 1 : 0);
+                      getWritableDatabase().insert("edits", null, v);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+              public synchronized boolean hasEdits(int acc, long dialog, int mid) {
+                  Cursor c = null;
+                  try {
+                      c = getReadableDatabase().rawQuery("SELECT 1 FROM edits WHERE acc = ? AND dialog = ? AND mid = ? LIMIT 1",
+                              new String[]{String.valueOf(acc), String.valueOf(dialog), String.valueOf(mid)});
+                      return c.moveToFirst();
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                      return false;
+                  } finally {
+                      if (c != null) {
+                          c.close();
+                      }
+                  }
+              }
+              /** Newest first. */
+              public synchronized ArrayList<Edit> getEdits(int acc, long dialog, int mid) {
+                  ArrayList<Edit> result = new ArrayList<>();
+                  Cursor c = null;
+                  try {
+                      c = getReadableDatabase().rawQuery("SELECT ts, version_date, text, had_media FROM edits WHERE acc = ? AND dialog = ? AND mid = ? ORDER BY id DESC",
+                              new String[]{String.valueOf(acc), String.valueOf(dialog), String.valueOf(mid)});
+                      while (c.moveToNext()) {
+                          Edit e = new Edit();
+                          e.editedAt = c.getLong(0);
+                          e.versionDate = c.getInt(1);
+                          e.text = c.getString(2);
+                          e.hadMedia = c.getInt(3) != 0;
+                          result.add(e);
+                      }
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  } finally {
+                      if (c != null) {
+                          c.close();
+                      }
+                  }
+                  return result;
+              }
+              public synchronized String getLastEditText(int acc, long dialog, int mid) {
+                  Cursor c = null;
+                  try {
+                      c = getReadableDatabase().rawQuery("SELECT text FROM edits WHERE acc = ? AND dialog = ? AND mid = ? ORDER BY id DESC LIMIT 1",
+                              new String[]{String.valueOf(acc), String.valueOf(dialog), String.valueOf(mid)});
+                      return c.moveToFirst() ? c.getString(0) : null;
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                      return null;
+                  } finally {
+                      if (c != null) {
+                          c.close();
+                      }
+                  }
+              }
+              public synchronized int count(String table) {
+                  Cursor c = null;
+                  try {
+                      c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM " + table, null);
+                      return c.moveToFirst() ? c.getInt(0) : 0;
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                      return 0;
+                  } finally {
+                      if (c != null) {
+                          c.close();
+                      }
+                  }
+              }
+              public synchronized void clearDeleted() {
+                  try {
+                      getWritableDatabase().delete("deleted_marks", null, null);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+              public synchronized void clearEdits() {
+                  try {
+                      getWritableDatabase().delete("edits", null, null);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+          }
+          NGEOF
+
+          mkdir -p "$(dirname 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGSave.java')"
+          cat > 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGSave.java' <<'NGEOF'
+          /*
+           * NGram: core logic of the "Save deleted" feature.
+           *
+           * Instead of removing messages that the other side (or an admin) deleted, we simply do not delete them from
+           * Telegram's local database and remember their ids in our own table, so the chat can mark them as deleted.
+           * Edits are recorded into an edit-history table.
+           *
+           * The idea comes from AyuGram for Android (Radolyn Labs, https://github.com/AyuGram/AyuGram4A, GPL).
+           */
+          package com.radolyn.ayugram.ngsave;
+          import android.os.SystemClock;
+          import android.text.TextUtils;
+          import androidx.collection.LongSparseArray;
+          import org.telegram.SQLite.SQLiteCursor;
+          import org.telegram.messenger.AndroidUtilities;
+          import org.telegram.messenger.ChatObject;
+          import org.telegram.messenger.DialogObject;
+          import org.telegram.messenger.FileLog;
+          import org.telegram.messenger.LocaleController;
+          import org.telegram.messenger.MessageObject;
+          import org.telegram.messenger.MessagesController;
+          import org.telegram.messenger.MessagesStorage;
+          import org.telegram.messenger.NotificationCenter;
+          import org.telegram.messenger.R;
+          import org.telegram.messenger.UserConfig;
+          import org.telegram.messenger.support.LongSparseIntArray;
+          import org.telegram.tgnet.NativeByteBuffer;
+          import org.telegram.tgnet.TLRPC;
+          import java.util.ArrayList;
+          import java.util.HashSet;
+          import java.util.Iterator;
+          import java.util.Map;
+          import java.util.Set;
+          import java.util.concurrent.ConcurrentHashMap;
+          import java.util.concurrent.CountDownLatch;
+          import java.util.concurrent.TimeUnit;
+          public class NGSave {
+              private static final int KIND_TEXT = 0;
+              private static final int KIND_PHOTO = 1;
+              private static final int KIND_VIDEO = 2;
+              private static final int KIND_VOICE = 3;
+              private static final int KIND_FILE = 4;
+              private static final int KIND_STICKER = 5;
+              private static final int KIND_GIF = 6;
+              private static final int KIND_OTHER = 7;
+              private static final long OWN_DELETE_TTL_MS = 10 * 60 * 1000L;
+              /** Messages that the user deleted himself on this device: these must really be deleted. */
+              private static final ConcurrentHashMap<String, Long> ownDeleted = new ConcurrentHashMap<>();
+              /** account -> dialogId -> ids of messages that were kept after being deleted by someone else. */
+              private static final ConcurrentHashMap<Long, Set<Integer>>[] marks = createMarks();
+              private static volatile boolean marksLoaded;
+              @SuppressWarnings("unchecked")
+              private static ConcurrentHashMap<Long, Set<Integer>>[] createMarks() {
+                  ConcurrentHashMap<Long, Set<Integer>>[] arr = new ConcurrentHashMap[UserConfig.MAX_ACCOUNT_COUNT];
+                  for (int a = 0; a < arr.length; a++) {
+                      arr[a] = new ConcurrentHashMap<>();
+                  }
+                  return arr;
+              }
+              // ------------------------------------------------------------------ marks cache
+              private static void ensureMarksLoaded() {
+                  if (marksLoaded) {
+                      return;
+                  }
+                  synchronized (NGSave.class) {
+                      if (marksLoaded) {
+                          return;
+                      }
+                      for (long[] row : NGSaveDb.getInstance().loadDeleted()) {
+                          cacheAdd((int) row[0], row[1], (int) row[2]);
+                      }
+                      marksLoaded = true;
+                  }
+              }
+              private static void cacheAdd(int account, long dialogId, int mid) {
+                  if (account < 0 || account >= marks.length) {
+                      return;
+                  }
+                  Set<Integer> set = marks[account].get(dialogId);
+                  if (set == null) {
+                      set = ConcurrentHashMap.newKeySet();
+                      Set<Integer> old = marks[account].putIfAbsent(dialogId, set);
+                      if (old != null) {
+                          set = old;
+                      }
+                  }
+                  set.add(mid);
+              }
+              private static void cacheRemove(int account, long dialogId, int mid) {
+                  if (account < 0 || account >= marks.length) {
+                      return;
+                  }
+                  Set<Integer> set = marks[account].get(dialogId);
+                  if (set != null) {
+                      set.remove(mid);
+                  }
+              }
+              /** Called from the chat UI for every message cell. */
+              public static boolean isMarked(int account, long dialogId, int mid) {
+                  try {
+                      if (account < 0 || account >= marks.length || !NGSaveConfig.get(NGSaveConfig.SHOW_MARKER)) {
+                          return false;
+                      }
+                      ensureMarksLoaded();
+                      Set<Integer> set = marks[account].get(dialogId);
+                      return set != null && set.contains(mid);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                      return false;
+                  }
+              }
+              public static CharSequence markerText() {
+                  switch (NGSaveConfig.getMarkerStyle()) {
+                      case NGSaveConfig.MARKER_ICON:
+                          return "\uD83D\uDDD1";
+                      case NGSaveConfig.MARKER_BOTH:
+                          return "\uD83D\uDDD1 " + NGStr.get(R.string.NGSaveDeletedMarker);
+                      default:
+                          return NGStr.get(R.string.NGSaveDeletedMarker);
+                  }
+              }
+              // ------------------------------------------------------------------ own deletions
+              private static String ownKey(int account, int mid, boolean channel) {
+                  return account + ":" + mid + ":" + (channel ? 1 : 0);
+              }
+              private static boolean isChannelDialog(int account, long dialogId) {
+                  if (dialogId >= 0 || DialogObject.isEncryptedDialog(dialogId)) {
+                      return false;
+                  }
+                  TLRPC.Chat chat = MessagesController.getInstance(account).getChat(-dialogId);
+                  return ChatObject.isChannel(chat);
+              }
+              /** Hook: the user deletes messages himself. They must disappear for real. */
+              public static void onOwnDelete(int account, long dialogId, ArrayList<Integer> ids) {
+                  try {
+                      if (ids == null || ids.isEmpty()) {
+                          return;
+                      }
+                      long now = SystemClock.elapsedRealtime();
+                      Iterator<Map.Entry<String, Long>> it = ownDeleted.entrySet().iterator();
+                      while (it.hasNext()) {
+                          if (now - it.next().getValue() > OWN_DELETE_TTL_MS) {
+                              it.remove();
+                          }
+                      }
+                      boolean channel = isChannelDialog(account, dialogId);
+                      for (int a = 0, n = ids.size(); a < n; a++) {
+                          int mid = ids.get(a);
+                          ownDeleted.put(ownKey(account, mid, channel), now);
+                          if (marksLoaded) {
+                              cacheRemove(account, dialogId, mid);
+                          }
+                          NGSaveDb.getInstance().deleteDeleted(account, dialogId, mid);
+                      }
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+              private static boolean isOwnDeleted(int account, int mid, boolean channel) {
+                  Long t = ownDeleted.get(ownKey(account, mid, channel));
+                  return t != null && SystemClock.elapsedRealtime() - t <= OWN_DELETE_TTL_MS;
+              }
+              // ------------------------------------------------------------------ deletion filtering
+              private static class Found {
+                  long uid;
+                  int mid;
+                  TLRPC.Message msg;
+              }
+              /** Looks messages up in Telegram's database (synchronously). dialogId == 0 means "any non-channel dialog". */
+              private static ArrayList<Found> lookup(int account, long dialogId, ArrayList<Integer> mids) {
+                  final ArrayList<Found> out = new ArrayList<>();
+                  final MessagesStorage storage = MessagesStorage.getInstance(account);
+                  final String ids = TextUtils.join(",", mids);
+                  Runnable r = () -> {
+                      SQLiteCursor cursor = null;
+                      try {
+                          String sql;
+                          if (dialogId != 0) {
+                              sql = "SELECT uid, mid, data FROM messages_v2 WHERE mid IN(" + ids + ") AND uid = " + dialogId;
+                          } else {
+                              sql = "SELECT uid, mid, data FROM messages_v2 WHERE mid IN(" + ids + ") AND is_channel = 0";
+                          }
+                          cursor = storage.getDatabase().queryFinalized(sql);
+                          while (cursor.next()) {
+                              NativeByteBuffer data = cursor.byteBufferValue(2);
+                              if (data == null) {
+                                  continue;
+                              }
+                              TLRPC.Message m = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                              data.reuse();
+                              if (m == null) {
+                                  continue;
+                              }
+                              Found f = new Found();
+                              f.uid = cursor.longValue(0);
+                              f.mid = cursor.intValue(1);
+                              f.msg = m;
+                              synchronized (out) {
+                                  out.add(f);
+                              }
+                          }
+                      } catch (Throwable e) {
+                          FileLog.e(e);
+                      } finally {
+                          if (cursor != null) {
+                              cursor.dispose();
+                          }
+                      }
+                  };
+                  if (Thread.currentThread() == storage.getStorageQueue()) {
+                      r.run();
+                  } else {
+                      CountDownLatch latch = new CountDownLatch(1);
+                      storage.getStorageQueue().postRunnable(() -> {
+                          try {
+                              r.run();
+                          } finally {
+                              latch.countDown();
+                          }
+                      });
+                      try {
+                          latch.await(5, TimeUnit.SECONDS);
+                      } catch (InterruptedException ignore) {
+                      }
+                  }
+                  synchronized (out) {
+                      return new ArrayList<>(out);
+                  }
+              }
+              private static boolean chatTypeEnabled(int account, long uid) {
+                  if (DialogObject.isEncryptedDialog(uid)) {
+                      return NGSaveConfig.get(NGSaveConfig.IN_SECRET);
+                  }
+                  MessagesController mc = MessagesController.getInstance(account);
+                  if (uid > 0) {
+                      TLRPC.User user = mc.getUser(uid);
+                      if (user != null && user.bot) {
+                          return NGSaveConfig.get(NGSaveConfig.IN_BOTS);
+                      }
+                      return NGSaveConfig.get(NGSaveConfig.IN_PRIVATE);
+                  }
+                  TLRPC.Chat chat = mc.getChat(-uid);
+                  if (chat != null && ChatObject.isChannel(chat) && !chat.megagroup) {
+                      return NGSaveConfig.get(NGSaveConfig.IN_CHANNELS);
+                  }
+                  return NGSaveConfig.get(NGSaveConfig.IN_GROUPS);
+              }
+              private static int kindOf(TLRPC.Message m) {
+                  TLRPC.MessageMedia media = m.media;
+                  if (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage) {
+                      return KIND_TEXT;
+                  }
+                  if (media instanceof TLRPC.TL_messageMediaPhoto) {
+                      return KIND_PHOTO;
+                  }
+                  if (media instanceof TLRPC.TL_messageMediaDocument && media.document != null) {
+                      TLRPC.Document d = media.document;
+                      if (MessageObject.isStickerDocument(d) || MessageObject.isAnimatedStickerDocument(d, true)) {
+                          return KIND_STICKER;
+                      }
+                      if (MessageObject.isGifDocument(d)) {
+                          return KIND_GIF;
+                      }
+                      if (MessageObject.isVoiceDocument(d) || MessageObject.isRoundVideoDocument(d)) {
+                          return KIND_VOICE;
+                      }
+                      if (MessageObject.isVideoDocument(d)) {
+                          return KIND_VIDEO;
+                      }
+                      return KIND_FILE;
+                  }
+                  return KIND_OTHER;
+              }
+              private static boolean kindEnabled(int kind) {
+                  switch (kind) {
+                      case KIND_TEXT:
+                          return NGSaveConfig.get(NGSaveConfig.K_TEXT);
+                      case KIND_PHOTO:
+                          return NGSaveConfig.get(NGSaveConfig.K_PHOTO);
+                      case KIND_VIDEO:
+                          return NGSaveConfig.get(NGSaveConfig.K_VIDEO);
+                      case KIND_VOICE:
+                          return NGSaveConfig.get(NGSaveConfig.K_VOICE);
+                      case KIND_FILE:
+                          return NGSaveConfig.get(NGSaveConfig.K_FILE);
+                      case KIND_STICKER:
+                          return NGSaveConfig.get(NGSaveConfig.K_STICKER);
+                      case KIND_GIF:
+                          return NGSaveConfig.get(NGSaveConfig.K_GIF);
+                      default:
+                          return NGSaveConfig.get(NGSaveConfig.K_OTHER);
+                  }
+              }
+              private static boolean shouldKeep(int account, long uid, TLRPC.Message msg) {
+                  if (msg instanceof TLRPC.TL_messageService) {
+                      return false;
+                  }
+                  return chatTypeEnabled(account, uid) && kindEnabled(kindOf(msg));
+              }
+              /**
+               * Removes from {@code ids} everything that must be kept (and remembers it). What stays in the list
+               * is deleted by Telegram as usual. {@code dialogKey} is 0 for ordinary (non-channel) updates.
+               */
+              private static void filterIds(int account, long dialogKey, ArrayList<Integer> ids) {
+                  final boolean channel = dialogKey != 0 && isChannelDialog(account, dialogKey);
+                  ArrayList<Integer> candidates = new ArrayList<>();
+                  ArrayList<Integer> remaining = new ArrayList<>();
+                  for (int a = 0, n = ids.size(); a < n; a++) {
+                      int mid = ids.get(a);
+                      if (isOwnDeleted(account, mid, channel)) {
+                          remaining.add(mid);
+                      } else {
+                          candidates.add(mid);
+                      }
+                  }
+                  if (candidates.isEmpty()) {
+                      return;
+                  }
+                  ensureMarksLoaded();
+                  HashSet<Integer> kept = new HashSet<>();
+                  HashSet<Long> changedDialogs = new HashSet<>();
+                  long now = System.currentTimeMillis() / 1000;
+                  for (Found f : lookup(account, dialogKey, candidates)) {
+                      if (kept.contains(f.mid) && !channel) {
+                          // same non-channel id in several dialogs is impossible, but be safe
+                          continue;
+                      }
+                      if (shouldKeep(account, f.uid, f.msg)) {
+                          kept.add(f.mid);
+                          cacheAdd(account, f.uid, f.mid);
+                          NGSaveDb.getInstance().insertDeleted(account, f.uid, f.mid, now);
+                          changedDialogs.add(f.uid);
+                      }
+                  }
+                  if (kept.isEmpty()) {
+                      return;
+                  }
+                  for (int mid : candidates) {
+                      if (!kept.contains(mid)) {
+                          remaining.add(mid);
+                      }
+                  }
+                  ids.clear();
+                  ids.addAll(remaining);
+                  for (long dialogId : changedDialogs) {
+                      AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.ngSaveMessagesKept, dialogId));
+                  }
+              }
+              /** Hook for processUpdateArray: lists of deleted ids by dialog (0 = non-channel). Modified in place. */
+              public static void filterDeleted(int account, LongSparseArray<ArrayList<Integer>> deleted) {
+                  try {
+                      if (deleted == null || !NGSaveConfig.get(NGSaveConfig.SAVE_DELETED)) {
+                          return;
+                      }
+                      for (int a = deleted.size() - 1; a >= 0; a--) {
+                          ArrayList<Integer> list = deleted.valueAt(a);
+                          if (list == null || list.isEmpty()) {
+                              continue;
+                          }
+                          filterIds(account, deleted.keyAt(a), list);
+                          if (list.isEmpty()) {
+                              deleted.removeAt(a);
+                          }
+                      }
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+              /** Hook: the other side deleted messages of a secret chat (ids are local message ids). Modified in place. */
+              public static void filterSecret(int account, long dialogId, ArrayList<Integer> ids) {
+                  try {
+                      if (ids == null || ids.isEmpty() || !NGSaveConfig.get(NGSaveConfig.SAVE_DELETED) || !NGSaveConfig.get(NGSaveConfig.IN_SECRET)) {
+                          return;
+                      }
+                      filterIds(account, dialogId, ids);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+              /** Hook: the other side cleared a whole secret chat. true = keep everything, do not clear. */
+              public static boolean keepSecretFlush(int account, long dialogId) {
+                  return NGSaveConfig.get(NGSaveConfig.SAVE_DELETED) && NGSaveConfig.get(NGSaveConfig.IN_SECRET) && NGSaveConfig.get(NGSaveConfig.KEEP_CLEARED);
+              }
+              /** Hook for push-driven deletions. Modified in place. */
+              public static void filterPush(int account, long channelId, ArrayList<Integer> ids) {
+                  try {
+                      if (ids == null || ids.isEmpty() || !NGSaveConfig.get(NGSaveConfig.SAVE_DELETED)) {
+                          return;
+                      }
+                      filterIds(account, channelId != 0 ? -channelId : 0, ids);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+              /** Hook: "history of a dialog was cleared" updates. Dialogs we want to keep are removed from the array. */
+              public static void filterClearHistory(int account, LongSparseIntArray cleared) {
+                  try {
+                      if (cleared == null || !NGSaveConfig.get(NGSaveConfig.SAVE_DELETED) || !NGSaveConfig.get(NGSaveConfig.KEEP_CLEARED)) {
+                          return;
+                      }
+                      for (int a = cleared.size() - 1; a >= 0; a--) {
+                          long dialogId = cleared.keyAt(a);
+                          if (dialogId != 0 && chatTypeEnabled(account, dialogId)) {
+                              cleared.removeAt(a);
+                          }
+                      }
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+              // ------------------------------------------------------------------ edit history
+              private static boolean sameMedia(TLRPC.Message o, TLRPC.Message n) {
+                  TLRPC.MessageMedia a = o.media;
+                  TLRPC.MessageMedia b = n.media;
+                  boolean aEmpty = a == null || a instanceof TLRPC.TL_messageMediaEmpty || a instanceof TLRPC.TL_messageMediaWebPage;
+                  boolean bEmpty = b == null || b instanceof TLRPC.TL_messageMediaEmpty || b instanceof TLRPC.TL_messageMediaWebPage;
+                  if (aEmpty || bEmpty) {
+                      return aEmpty && bEmpty;
+                  }
+                  if (a instanceof TLRPC.TL_messageMediaPhoto && b instanceof TLRPC.TL_messageMediaPhoto && a.photo != null && b.photo != null) {
+                      return a.photo.id == b.photo.id;
+                  }
+                  if (a instanceof TLRPC.TL_messageMediaDocument && b instanceof TLRPC.TL_messageMediaDocument && a.document != null && b.document != null) {
+                      return a.document.id == b.document.id;
+                  }
+                  return a.getClass() == b.getClass();
+              }
+              /** Hook: an already known message came back from the server changed. Runs on the storage thread. */
+              public static void onMessageEdited(int account, long dialogId, TLRPC.Message oldMsg, TLRPC.Message newMsg) {
+                  try {
+                      if (!NGSaveConfig.get(NGSaveConfig.SAVE_EDITS) || oldMsg == null || newMsg == null) {
+                          return;
+                      }
+                      if (oldMsg instanceof TLRPC.TL_messageService) {
+                          return;
+                      }
+                      boolean sameMedia = sameMedia(oldMsg, newMsg);
+                      if (sameMedia && TextUtils.equals(oldMsg.message, newMsg.message)) {
+                          return;
+                      }
+                      String text = oldMsg.message == null ? "" : oldMsg.message;
+                      boolean hadMedia = oldMsg.media != null && !(oldMsg.media instanceof TLRPC.TL_messageMediaEmpty) && !(oldMsg.media instanceof TLRPC.TL_messageMediaWebPage);
+                      NGSaveDb db = NGSaveDb.getInstance();
+                      String last = db.getLastEditText(account, dialogId, oldMsg.id);
+                      if (last != null && last.equals(text) && sameMedia) {
+                          return;
+                      }
+                      int versionDate = oldMsg.edit_date != 0 ? oldMsg.edit_date : oldMsg.date;
+                      db.insertEdit(account, dialogId, oldMsg.id, System.currentTimeMillis() / 1000, versionDate, text, hadMedia && !sameMedia);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+              public static boolean hasEditHistory(int account, long dialogId, int mid) {
+                  try {
+                      return NGSaveDb.getInstance().hasEdits(account, dialogId, mid);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                      return false;
+                  }
+              }
+              // ------------------------------------------------------------------ maintenance
+              public static void clearAll() {
+                  NGSaveDb.getInstance().clearDeleted();
+                  NGSaveDb.getInstance().clearEdits();
+                  for (ConcurrentHashMap<Long, Set<Integer>> m : marks) {
+                      m.clear();
+                  }
+              }
+              public static void clearEdits() {
+                  NGSaveDb.getInstance().clearEdits();
+              }
+              public static void clearMarks() {
+                  NGSaveDb.getInstance().clearDeleted();
+                  for (ConcurrentHashMap<Long, Set<Integer>> m : marks) {
+                      m.clear();
+                  }
+              }
+          }
+          NGEOF
+
+          mkdir -p "$(dirname 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGSaveUi.java')"
+          cat > 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGSaveUi.java' <<'NGEOF'
+          /*
+           * NGram: small UI helpers for the "Save deleted" feature.
+           */
+          package com.radolyn.ayugram.ngsave;
+          import android.app.Activity;
+          import org.telegram.messenger.LocaleController;
+          import org.telegram.messenger.R;
+          import org.telegram.ui.ActionBar.AlertDialog;
+          import org.telegram.ui.ActionBar.BaseFragment;
+          import java.text.SimpleDateFormat;
+          import java.util.ArrayList;
+          import java.util.Date;
+          import java.util.Locale;
+          public class NGSaveUi {
+              public static void showEditHistory(BaseFragment fragment, long dialogId, int mid) {
+                  Activity activity = fragment.getParentActivity();
+                  if (activity == null) {
+                      return;
+                  }
+                  ArrayList<NGSaveDb.Edit> edits = NGSaveDb.getInstance().getEdits(fragment.getCurrentAccount(), dialogId, mid);
+                  SimpleDateFormat format = new SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault());
+                  StringBuilder sb = new StringBuilder();
+                  for (int a = 0; a < edits.size(); a++) {
+                      NGSaveDb.Edit e = edits.get(a);
+                      if (a > 0) {
+                          sb.append("\n\n");
+                      }
+                      sb.append(format.format(new Date(e.versionDate * 1000L))).append('\n');
+                      if (e.text == null || e.text.isEmpty()) {
+                          sb.append(NGStr.get(R.string.NGSaveEditNoText));
+                      } else {
+                          sb.append(e.text);
+                      }
+                      if (e.hadMedia) {
+                          sb.append('\n').append(NGStr.get(R.string.NGSaveEditMediaChanged));
+                      }
+                  }
+                  if (edits.isEmpty()) {
+                      sb.append(NGStr.get(R.string.NGSaveEditEmpty));
+                  }
+                  AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+                  builder.setTitle(NGStr.get(R.string.NGSaveEditHistory));
+                  builder.setMessage(sb.toString());
+                  builder.setPositiveButton(LocaleController.getString(R.string.OK), null);
+                  fragment.showDialog(builder.create());
+              }
+          }
+          NGEOF
+
+          mkdir -p "$(dirname 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGSavePreferencesActivity.java')"
+          cat > 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGSavePreferencesActivity.java' <<'NGEOF'
+          /*
+           * NGram: settings screen for saving deleted messages and edit history.
+           * Built on plain Telegram cells (same approach as the Ghost mode screen).
+           */
+          package com.radolyn.ayugram.ngsave;
+          import android.content.Context;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.FrameLayout;
+          import androidx.annotation.NonNull;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import androidx.recyclerview.widget.RecyclerView;
+          import org.telegram.messenger.LocaleController;
+          import org.telegram.messenger.R;
+          import org.telegram.ui.ActionBar.ActionBar;
+          import org.telegram.ui.ActionBar.AlertDialog;
+          import org.telegram.ui.ActionBar.BaseFragment;
+          import org.telegram.ui.ActionBar.Theme;
+          import org.telegram.ui.Cells.HeaderCell;
+          import org.telegram.ui.Cells.TextCell;
+          import org.telegram.ui.Cells.TextCheckCell;
+          import org.telegram.ui.Cells.TextInfoPrivacyCell;
+          import org.telegram.ui.Cells.TextSettingsCell;
+          import org.telegram.ui.Components.BulletinFactory;
+          import org.telegram.ui.Components.LayoutHelper;
+          import org.telegram.ui.Components.RecyclerListView;
+          import java.util.ArrayList;
+          public class NGSavePreferencesActivity extends BaseFragment {
+              private static final int TYPE_HEADER = 0;
+              private static final int TYPE_CHECK = 1;
+              private static final int TYPE_INFO = 2;
+              private static final int TYPE_VALUE = 3;
+              private static final int TYPE_ACTION = 4;
+              private static final int ACTION_MARKER_STYLE = 1;
+              private static final int ACTION_CLEAR_EDITS = 2;
+              private static final int ACTION_CLEAR_MARKS = 3;
+              private static final int ACTION_CLEAR_ALL = 4;
+              private static class Row {
+                  final int type;
+                  final String key;
+                  final int titleRes;
+                  final int action;
+                  boolean divider;
+                  Row(int type, String key, int titleRes, int action, boolean divider) {
+                      this.type = type;
+                      this.key = key;
+                      this.titleRes = titleRes;
+                      this.action = action;
+                      this.divider = divider;
+                  }
+              }
+              private final ArrayList<Row> rows = new ArrayList<>();
+              private RecyclerListView listView;
+              private ListAdapter adapter;
+              private void header(int res) {
+                  rows.add(new Row(TYPE_HEADER, null, res, 0, false));
+              }
+              private void info(int res) {
+                  rows.add(new Row(TYPE_INFO, null, res, 0, false));
+              }
+              private void check(String key, int res, boolean divider) {
+                  rows.add(new Row(TYPE_CHECK, key, res, 0, divider));
+              }
+              private void value(int action, int res, boolean divider) {
+                  rows.add(new Row(TYPE_VALUE, null, res, action, divider));
+              }
+              private void action(int action, int res, boolean divider) {
+                  rows.add(new Row(TYPE_ACTION, null, res, action, divider));
+              }
+              private void updateRows() {
+                  rows.clear();
+                  header(R.string.NGSaveHeaderDeleted);
+                  check(NGSaveConfig.SAVE_DELETED, R.string.NGSaveDeleted, false);
+                  info(R.string.NGSaveDeletedInfo);
+                  if (NGSaveConfig.get(NGSaveConfig.SAVE_DELETED)) {
+                      header(R.string.NGSaveHeaderChats);
+                      check(NGSaveConfig.IN_PRIVATE, R.string.NGSaveInPrivate, true);
+                      check(NGSaveConfig.IN_BOTS, R.string.NGSaveInBots, true);
+                      check(NGSaveConfig.IN_GROUPS, R.string.NGSaveInGroups, true);
+                      check(NGSaveConfig.IN_CHANNELS, R.string.NGSaveInChannels, true);
+                      check(NGSaveConfig.IN_SECRET, R.string.NGSaveInSecret, true);
+                      check(NGSaveConfig.KEEP_CLEARED, R.string.NGSaveKeepCleared, false);
+                      info(R.string.NGSaveChatsInfo);
+                      header(R.string.NGSaveHeaderContent);
+                      check(NGSaveConfig.K_TEXT, R.string.NGSaveKText, true);
+                      check(NGSaveConfig.K_PHOTO, R.string.NGSaveKPhoto, true);
+                      check(NGSaveConfig.K_VIDEO, R.string.NGSaveKVideo, true);
+                      check(NGSaveConfig.K_VOICE, R.string.NGSaveKVoice, true);
+                      check(NGSaveConfig.K_FILE, R.string.NGSaveKFile, true);
+                      check(NGSaveConfig.K_STICKER, R.string.NGSaveKSticker, true);
+                      check(NGSaveConfig.K_GIF, R.string.NGSaveKGif, true);
+                      check(NGSaveConfig.K_OTHER, R.string.NGSaveKOther, false);
+                      info(R.string.NGSaveContentInfo);
+                      header(R.string.NGSaveHeaderDisplay);
+                      check(NGSaveConfig.SHOW_MARKER, R.string.NGSaveShowMarker, NGSaveConfig.get(NGSaveConfig.SHOW_MARKER));
+                      if (NGSaveConfig.get(NGSaveConfig.SHOW_MARKER)) {
+                          value(ACTION_MARKER_STYLE, R.string.NGSaveMarkerStyle, false);
+                      }
+                      info(R.string.NGSaveDisplayInfo);
+                  }
+                  header(R.string.NGSaveHeaderEdits);
+                  check(NGSaveConfig.SAVE_EDITS, R.string.NGSaveEdits, false);
+                  info(R.string.NGSaveEditsInfo);
+                  header(R.string.NGSaveHeaderData);
+                  action(ACTION_CLEAR_EDITS, R.string.NGSaveClearEdits, true);
+                  action(ACTION_CLEAR_MARKS, R.string.NGSaveClearMarks, true);
+                  action(ACTION_CLEAR_ALL, R.string.NGSaveClearAll, false);
+                  info(R.string.NGSaveDataInfo);
+              }
+              @Override
+              public boolean onFragmentCreate() {
+                  updateRows();
+                  return super.onFragmentCreate();
+              }
+              @Override
+              public View createView(Context context) {
+                  actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+                  actionBar.setAllowOverlayTitle(true);
+                  actionBar.setTitle(NGStr.get(R.string.NGSaveSettings));
+                  actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                      @Override
+                      public void onItemClick(int id) {
+                          if (id == -1) {
+                              finishFragment();
+                          }
+                      }
+                  });
+                  fragmentView = new FrameLayout(context);
+                  FrameLayout frameLayout = (FrameLayout) fragmentView;
+                  frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+                  listView = new RecyclerListView(context);
+                  listView.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false));
+                  listView.setVerticalScrollBarEnabled(false);
+                  listView.setAdapter(adapter = new ListAdapter());
+                  frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                  listView.setOnItemClickListener((view, position) -> {
+                      if (position < 0 || position >= rows.size()) {
+                          return;
+                      }
+                      Row row = rows.get(position);
+                      if (row.type == TYPE_CHECK) {
+                          NGSaveConfig.toggle(row.key);
+                          if (NGSaveConfig.SAVE_DELETED.equals(row.key) || NGSaveConfig.SHOW_MARKER.equals(row.key)) {
+                              updateRows();
+                          }
+                          adapter.notifyDataSetChanged();
+                      } else if (row.type == TYPE_VALUE && row.action == ACTION_MARKER_STYLE) {
+                          showMarkerStyleDialog();
+                      } else if (row.type == TYPE_ACTION) {
+                          confirmClear(row.action);
+                      }
+                  });
+                  return fragmentView;
+              }
+              private void showMarkerStyleDialog() {
+                  if (getParentActivity() == null) {
+                      return;
+                  }
+                  AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                  builder.setTitle(NGStr.get(R.string.NGSaveMarkerStyle));
+                  builder.setItems(new CharSequence[]{
+                          NGStr.get(R.string.NGSaveMarkerText),
+                          NGStr.get(R.string.NGSaveMarkerIcon),
+                          NGStr.get(R.string.NGSaveMarkerBoth)
+                  }, (dialog, which) -> {
+                      NGSaveConfig.setMarkerStyle(which);
+                      adapter.notifyDataSetChanged();
+                  });
+                  showDialog(builder.create());
+              }
+              private void confirmClear(int action) {
+                  if (getParentActivity() == null) {
+                      return;
+                  }
+                  AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                  builder.setTitle(NGStr.get(R.string.NGSaveClearTitle));
+                  builder.setMessage(NGStr.get(R.string.NGSaveClearMessage));
+                  builder.setPositiveButton(LocaleController.getString(R.string.OK), (dialog, which) -> {
+                      if (action == ACTION_CLEAR_EDITS) {
+                          NGSave.clearEdits();
+                      } else if (action == ACTION_CLEAR_MARKS) {
+                          NGSave.clearMarks();
+                      } else {
+                          NGSave.clearAll();
+                      }
+                      adapter.notifyDataSetChanged();
+                      BulletinFactory.of(this).createSuccessBulletin(NGStr.get(R.string.NGSaveCleared)).show();
+                  });
+                  builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
+                  showDialog(builder.create());
+              }
+              private String markerStyleName() {
+                  switch (NGSaveConfig.getMarkerStyle()) {
+                      case NGSaveConfig.MARKER_ICON:
+                          return NGStr.get(R.string.NGSaveMarkerIcon);
+                      case NGSaveConfig.MARKER_BOTH:
+                          return NGStr.get(R.string.NGSaveMarkerBoth);
+                      default:
+                          return NGStr.get(R.string.NGSaveMarkerText);
+                  }
+              }
+              private class ListAdapter extends RecyclerListView.SelectionAdapter {
+                  @NonNull
+                  @Override
+                  public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+                      View view;
+                      switch (viewType) {
+                          case TYPE_HEADER:
+                              view = new HeaderCell(getContext());
+                              view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                              break;
+                          case TYPE_CHECK:
+                              view = new TextCheckCell(getContext());
+                              view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                              break;
+                          case TYPE_VALUE:
+                              view = new TextSettingsCell(getContext());
+                              view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                              break;
+                          case TYPE_ACTION:
+                              view = new TextCell(getContext());
+                              view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                              break;
+                          default:
+                              view = new TextInfoPrivacyCell(getContext());
+                              break;
+                      }
+                      return new RecyclerListView.Holder(view);
+                  }
+                  @Override
+                  public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+                      Row row = rows.get(position);
+                      switch (holder.getItemViewType()) {
+                          case TYPE_HEADER:
+                              ((HeaderCell) holder.itemView).setText(NGStr.get(row.titleRes));
+                              break;
+                          case TYPE_INFO:
+                              ((TextInfoPrivacyCell) holder.itemView).setText(NGStr.get(row.titleRes));
+                              break;
+                          case TYPE_CHECK:
+                              ((TextCheckCell) holder.itemView).setTextAndCheck(NGStr.get(row.titleRes), NGSaveConfig.get(row.key), row.divider);
+                              break;
+                          case TYPE_VALUE:
+                              ((TextSettingsCell) holder.itemView).setTextAndValue(NGStr.get(row.titleRes), markerStyleName(), row.divider);
+                              break;
+                          case TYPE_ACTION:
+                              TextCell cell = (TextCell) holder.itemView;
+                              cell.setText(NGStr.get(row.titleRes), row.divider);
+                              cell.setColors(-1, Theme.key_text_RedRegular);
+                              break;
+                      }
+                  }
+                  @Override
+                  public int getItemCount() {
+                      return rows.size();
+                  }
+                  @Override
+                  public boolean isEnabled(RecyclerView.ViewHolder holder) {
+                      int t = holder.getItemViewType();
+                      return t == TYPE_CHECK || t == TYPE_VALUE || t == TYPE_ACTION;
+                  }
+                  @Override
+                  public int getItemViewType(int position) {
+                      return rows.get(position).type;
+                  }
+              }
+              @Override
+              public boolean isSupportEdgeToEdge() {
+                  return true;
+              }
+              @Override
+              public void onInsets(int left, int top, int right, int bottom) {
+                  listView.setPadding(0, 0, 0, bottom);
+                  listView.setClipToPadding(false);
+              }
+          }
+          NGEOF
+
+          mkdir -p "$(dirname 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGStr.java')"
+          cat > 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGStr.java' <<'NGEOF'
+          /*
+           * NGram: string loader for NGram screens.
+           * Telegram 12.x reads strings from a prebuilt bundle, so strings added to strings.xml are not found by
+           * LocaleController.getString() and show up as "LOC_ERR:null". This reads them from Android resources
+           * directly, always in Russian (section names stay in English where the resource says so).
+           */
+          package com.radolyn.ayugram.ngsave;
+          import android.content.Context;
+          import android.content.res.Configuration;
+          import org.telegram.messenger.ApplicationLoader;
+          import org.telegram.messenger.FileLog;
+          import java.util.Locale;
+          public class NGStr {
+              private static Context russianContext;
+              public static synchronized String get(int res) {
+                  try {
+                      if (russianContext == null) {
+                          Context base = ApplicationLoader.applicationContext;
+                          Configuration configuration = new Configuration(base.getResources().getConfiguration());
+                          configuration.setLocale(new Locale("ru"));
+                          russianContext = base.createConfigurationContext(configuration);
+                      }
+                      return russianContext.getResources().getString(res);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                      try {
+                          return ApplicationLoader.applicationContext.getString(res);
+                      } catch (Throwable ignore) {
+                          return "";
+                      }
+                  }
+              }
+          }
+          NGEOF
+
+          mkdir -p "$(dirname 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGRead.java')"
+          cat > 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGRead.java' <<'NGEOF'
+          /*
+           * NGram: local part of the manual "Read until" action (Ghost mode).
+           */
+          package com.radolyn.ayugram.ngsave;
+          import com.radolyn.ayugram.utils.AyuGhostUtils;
+          import org.telegram.messenger.AndroidUtilities;
+          import org.telegram.messenger.FileLog;
+          import org.telegram.messenger.MessagesController;
+          import org.telegram.messenger.NotificationCenter;
+          import org.telegram.messenger.NotificationsController;
+          import org.telegram.tgnet.TLRPC;
+          public class NGRead {
+              /** Marks everything up to untilId as read on this device (the server request is sent separately). */
+              public static void afterReadUntil(int account, long dialogId, int untilId, int readCount) {
+                  try {
+                      MessagesController mc = MessagesController.getInstance(account);
+                      TLRPC.Dialog dialog = mc.dialogs_dict.get(dialogId);
+                      int unread = dialog != null ? Math.max(0, dialog.unread_count - readCount) : 0;
+                      AyuGhostUtils.markReadLocally(account, dialogId, untilId, unread);
+                      if (dialog != null) {
+                          dialog.unread_count = unread;
+                      }
+                      AndroidUtilities.runOnUIThread(() -> {
+                          NotificationsController.getInstance(account).processReadMessages(null, dialogId, 0, untilId, false);
+                          NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces, MessagesController.UPDATE_MASK_READ_DIALOG_MESSAGE);
+                          NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.dialogsNeedReload);
+                      });
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+          }
+          NGEOF
+
+          MENU='TMessagesProj/src/main/java/com/radolyn/ayugram/ui/preferences/NGramPreferencesActivity.java'
+          mkdir -p "$(dirname 'TMessagesProj/src/main/java/com/radolyn/ayugram/ui/preferences/NGramPreferencesActivity.java')"
+          cat > /tmp/ng_menu.java <<'NGEOF'
+          /*
+           * NGram settings section: list of NGram features.
+           * Item names are intentionally in English, everything inside the screens is in Russian.
+           */
+          package com.radolyn.ayugram.ui.preferences;
+          import android.content.Context;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.FrameLayout;
+          import androidx.annotation.NonNull;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import androidx.recyclerview.widget.RecyclerView;
+          import com.radolyn.ayugram.ngsave.NGSavePreferencesActivity;
+          import com.radolyn.ayugram.ngsave.NGStr;
+          import org.telegram.messenger.R;
+          import org.telegram.ui.ActionBar.ActionBar;
+          import org.telegram.ui.ActionBar.AlertDialog;
+          import org.telegram.ui.ActionBar.BaseFragment;
+          import org.telegram.ui.ActionBar.Theme;
+          import org.telegram.ui.Cells.HeaderCell;
+          import org.telegram.ui.Cells.TextCell;
+          import org.telegram.ui.Components.LayoutHelper;
+          import org.telegram.ui.Components.RecyclerListView;
+          public class NGramPreferencesActivity extends BaseFragment {
+              private static final int TYPE_HEADER = 0;
+              private static final int TYPE_TEXT = 1;
+              private static final String[] TITLES = {
+                      "Ghost mode",
+                      "Save deleted",
+                      "Local premium",
+                      "Local banners",
+                      "Proxy",
+                      "Plugins"
+              };
+              private static final int[] ICONS = {
+                      R.drawable.ayu_ghost,
+                      R.drawable.msg_delete,
+                      R.drawable.msg_premium_prolfilestar,
+                      R.drawable.msg_gallery,
+                      R.drawable.msg_settings,
+                      R.drawable.msg_fave
+              };
+              private static final int[] COLORS = {
+                      0xFF9B6BFF,
+                      0xFFFF6B6B,
+                      0xFF4DA3FF,
+                      0xFF3FC380,
+                      0xFFFFA23E,
+                      0xFF8E8E93
+              };
+              private RecyclerListView listView;
+              @Override
+              public View createView(Context context) {
+                  actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+                  actionBar.setAllowOverlayTitle(true);
+                  actionBar.setTitle("NGram");
+                  actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                      @Override
+                      public void onItemClick(int id) {
+                          if (id == -1) {
+                              finishFragment();
+                          }
+                      }
+                  });
+                  fragmentView = new FrameLayout(context);
+                  FrameLayout frameLayout = (FrameLayout) fragmentView;
+                  frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+                  listView = new RecyclerListView(context);
+                  listView.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false));
+                  listView.setVerticalScrollBarEnabled(false);
+                  listView.setAdapter(new ListAdapter());
+                  frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                  listView.setOnItemClickListener((view, position) -> {
+                      int index = position - 1;
+                      if (index == 0) {
+                          presentFragment(new GhostPreferencesActivity());
+                      } else if (index == 1) {
+                          presentFragment(new NGSavePreferencesActivity());
+                      } else if (index == 2) {
+                          // NG-HOOK:premium
+                          showSoon(index);
+                      } else if (index == 3) {
+                          // NG-HOOK:banners
+                          showSoon(index);
+                      } else {
+                          showSoon(index);
+                      }
+                  });
+                  return fragmentView;
+              }
+              private void showSoon(int index) {
+                  if (getParentActivity() == null || index < 0 || index >= TITLES.length) {
+                      return;
+                  }
+                  AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                  builder.setTitle(TITLES[index]);
+                  builder.setMessage("Этот раздел появится в следующем обновлении.");
+                  builder.setPositiveButton("OK", null);
+                  showDialog(builder.create());
+              }
+              private class ListAdapter extends RecyclerListView.SelectionAdapter {
+                  @NonNull
+                  @Override
+                  public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+                      View view;
+                      if (viewType == TYPE_HEADER) {
+                          view = new HeaderCell(getContext());
+                      } else {
+                          view = new TextCell(getContext());
+                      }
+                      view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                      return new RecyclerListView.Holder(view);
+                  }
+                  @Override
+                  public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+                      if (holder.getItemViewType() == TYPE_HEADER) {
+                          ((HeaderCell) holder.itemView).setText("Settings NGram");
+                      } else {
+                          int index = position - 1;
+                          ((TextCell) holder.itemView).setTextAndColorfulIcon(TITLES[index], ICONS[index], COLORS[index], index < TITLES.length - 1);
+                      }
+                  }
+                  @Override
+                  public int getItemCount() {
+                      return TITLES.length + 1;
+                  }
+                  @Override
+                  public boolean isEnabled(RecyclerView.ViewHolder holder) {
+                      return holder.getItemViewType() == TYPE_TEXT;
+                  }
+                  @Override
+                  public int getItemViewType(int position) {
+                      return position == 0 ? TYPE_HEADER : TYPE_TEXT;
+                  }
+              }
+              @Override
+              public boolean isSupportEdgeToEdge() {
+                  return true;
+              }
+              @Override
+              public void onInsets(int left, int top, int right, int bottom) {
+                  listView.setPadding(0, 0, 0, bottom);
+                  listView.setClipToPadding(false);
+              }
+          }
+          NGEOF
+          # do not overwrite the menu when hooks of other NGram workflows are already in it
+          if [ ! -f "$MENU" ] || ! grep -q 'TITLES' "$MENU"; then cp /tmp/ng_menu.java "$MENU"; fi
+
+          mkdir -p "$(dirname 'TMessagesProj/src/main/res/values/ng_save.xml')"
+          cat > 'TMessagesProj/src/main/res/values/ng_save.xml' <<'NGEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <string name="NGSaveSettings">Save deleted</string>
+            <string name="NGSaveHeaderDeleted">Deleted messages</string>
+            <string name="NGSaveDeleted">Keep deleted messages</string>
+            <string name="NGSaveDeletedInfo">When someone else deletes a message, it stays in the chat and is marked as deleted. Messages you delete yourself are removed as usual.</string>
+            <string name="NGSaveHeaderChats">Where to keep</string>
+            <string name="NGSaveInPrivate">Private chats</string>
+            <string name="NGSaveInBots">Bots</string>
+            <string name="NGSaveInGroups">Groups</string>
+            <string name="NGSaveInChannels">Channels</string>
+            <string name="NGSaveInSecret">Secret chats</string>
+            <string name="NGSaveKeepCleared">Chats cleared by the other side</string>
+            <string name="NGSaveChatsInfo">If the other person deletes the whole chat, its messages are kept too. Messages that never reached this device cannot be recovered.</string>
+            <string name="NGSaveHeaderContent">What to keep</string>
+            <string name="NGSaveKText">Text messages</string>
+            <string name="NGSaveKPhoto">Photos</string>
+            <string name="NGSaveKVideo">Videos</string>
+            <string name="NGSaveKVoice">Voice and round messages</string>
+            <string name="NGSaveKFile">Files and music</string>
+            <string name="NGSaveKSticker">Stickers</string>
+            <string name="NGSaveKGif">GIFs</string>
+            <string name="NGSaveKOther">Other (polls, locations, contacts)</string>
+            <string name="NGSaveContentInfo">Only messages of the checked types are kept. Media that was not downloaded before the deletion can no longer be loaded from the server.</string>
+            <string name="NGSaveHeaderDisplay">Appearance</string>
+            <string name="NGSaveShowMarker">Mark deleted messages</string>
+            <string name="NGSaveMarkerStyle">Marker style</string>
+            <string name="NGSaveMarkerText">Text</string>
+            <string name="NGSaveMarkerIcon">Icon</string>
+            <string name="NGSaveMarkerBoth">Icon and text</string>
+            <string name="NGSaveDisplayInfo">The marker is shown next to the time of the message.</string>
+            <string name="NGSaveDeletedMarker">deleted</string>
+            <string name="NGSaveHeaderEdits">Edit history</string>
+            <string name="NGSaveEdits">Save edit history</string>
+            <string name="NGSaveEditsInfo">Previous versions of edited messages are saved. Long-press an edited message and choose Edit history.</string>
+            <string name="NGSaveEditHistory">Edit history</string>
+            <string name="NGSaveEditEmpty">No saved versions.</string>
+            <string name="NGSaveEditNoText">(no text)</string>
+            <string name="NGSaveEditMediaChanged">(the attachment was changed)</string>
+            <string name="NGSaveHeaderData">Saved data</string>
+            <string name="NGSaveClearEdits">Clear edit history</string>
+            <string name="NGSaveClearMarks">Forget deleted markers</string>
+            <string name="NGSaveClearAll">Clear everything</string>
+            <string name="NGSaveDataInfo">Kept messages stay in the chat. Clearing markers only removes the deleted label and does not delete the messages.</string>
+            <string name="NGSaveClearTitle">Clear saved data</string>
+            <string name="NGSaveClearMessage">This cannot be undone.</string>
+            <string name="NGSaveCleared">Done</string>
+          </resources>
+          NGEOF
+
+          mkdir -p "$(dirname 'TMessagesProj/src/main/res/values-ru/ng_save.xml')"
+          cat > 'TMessagesProj/src/main/res/values-ru/ng_save.xml' <<'NGEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <string name="NGSaveSettings">Save deleted</string>
+            <string name="NGSaveHeaderDeleted">Удалённые сообщения</string>
+            <string name="NGSaveDeleted">Сохранять удалённые сообщения</string>
+            <string name="NGSaveDeletedInfo">Если сообщение удалил кто-то другой, оно остаётся в чате с пометкой «удалено». Сообщения, которые вы удаляете сами, удаляются как обычно.</string>
+            <string name="NGSaveHeaderChats">Где сохранять</string>
+            <string name="NGSaveInPrivate">Личные чаты</string>
+            <string name="NGSaveInBots">Боты</string>
+            <string name="NGSaveInGroups">Группы</string>
+            <string name="NGSaveInChannels">Каналы</string>
+            <string name="NGSaveInSecret">Секретные чаты</string>
+            <string name="NGSaveKeepCleared">Чаты, очищенные собеседником</string>
+            <string name="NGSaveChatsInfo">Если собеседник удалил весь чат, его сообщения тоже останутся. Сообщения, которые не успели дойти до этого устройства, восстановить нельзя.</string>
+            <string name="NGSaveHeaderContent">Что сохранять</string>
+            <string name="NGSaveKText">Текстовые сообщения</string>
+            <string name="NGSaveKPhoto">Фото</string>
+            <string name="NGSaveKVideo">Видео</string>
+            <string name="NGSaveKVoice">Голосовые и кружки</string>
+            <string name="NGSaveKFile">Файлы и музыка</string>
+            <string name="NGSaveKSticker">Стикеры</string>
+            <string name="NGSaveKGif">GIF</string>
+            <string name="NGSaveKOther">Прочее (опросы, геопозиция, контакты)</string>
+            <string name="NGSaveContentInfo">Сохраняются только сообщения отмеченных типов. Медиа, которое не было загружено до удаления, с сервера уже не загрузить.</string>
+            <string name="NGSaveHeaderDisplay">Внешний вид</string>
+            <string name="NGSaveShowMarker">Помечать удалённые сообщения</string>
+            <string name="NGSaveMarkerStyle">Вид пометки</string>
+            <string name="NGSaveMarkerText">Текст</string>
+            <string name="NGSaveMarkerIcon">Значок</string>
+            <string name="NGSaveMarkerBoth">Значок и текст</string>
+            <string name="NGSaveDisplayInfo">Пометка показывается рядом со временем сообщения.</string>
+            <string name="NGSaveDeletedMarker">удалено</string>
+            <string name="NGSaveHeaderEdits">История изменений</string>
+            <string name="NGSaveEdits">Сохранять историю изменений</string>
+            <string name="NGSaveEditsInfo">Прежние версии отредактированных сообщений сохраняются. Нажмите и удерживайте изменённое сообщение и выберите «История изменений».</string>
+            <string name="NGSaveEditHistory">История изменений</string>
+            <string name="NGSaveEditEmpty">Сохранённых версий нет.</string>
+            <string name="NGSaveEditNoText">(без текста)</string>
+            <string name="NGSaveEditMediaChanged">(вложение было изменено)</string>
+            <string name="NGSaveHeaderData">Сохранённые данные</string>
+            <string name="NGSaveClearEdits">Очистить историю изменений</string>
+            <string name="NGSaveClearMarks">Забыть пометки «удалено»</string>
+            <string name="NGSaveClearAll">Очистить всё</string>
+            <string name="NGSaveDataInfo">Сохранённые сообщения остаются в чате. Очистка пометок убирает только надпись «удалено», сами сообщения не удаляются.</string>
+            <string name="NGSaveClearTitle">Очистка сохранённых данных</string>
+            <string name="NGSaveClearMessage">Это действие нельзя отменить.</string>
+            <string name="NGSaveCleared">Готово</string>
+          </resources>
+          NGEOF
+
+          cat > '/tmp/ng_patch_core.py' <<'NGEOF'
+          #!/usr/bin/env python3
+          """Hooks the NGSave module into Telegram core files. Every anchor must match exactly once, otherwise
+          nothing is written and the script exits with an error (so a broken patch never gets committed)."""
+          import sys, os
+          ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
+          JAVA = os.path.join(ROOT, "TMessagesProj/src/main/java/org/telegram")
+          MARK = "com.radolyn.ayugram.ngsave"
+          pending = {}
+          def load(rel):
+              p = os.path.join(JAVA, rel)
+              if p not in pending:
+                  with open(p, encoding="utf-8") as f:
+                      pending[p] = f.read()
+              return p
+          def patch(rel, old, new, name):
+              p = load(rel)
+              s = pending[p]
+              if new in s:
+                  print("already there:", name)
+                  return
+              n = s.count(old)
+              if n != 1:
+                  sys.exit("ANCHOR ERROR [%s] in %s: found %d times (expected 1)" % (name, rel, n))
+              pending[p] = s.replace(old, new, 1)
+              print("patched:", name)
+          # 1) new notification id ----------------------------------------------------------------------------
+          patch("messenger/NotificationCenter.java",
+                "    public static final int communitySwitchedCollapsed = totalEvents++;\n",
+                "    public static final int communitySwitchedCollapsed = totalEvents++;\n"
+                "    public static final int ngSaveMessagesKept = totalEvents++;\n",
+                "NotificationCenter.ngSaveMessagesKept")
+          # 2) edit history hook in MessagesStorage -------------------------------------------------------------
+          patch("messenger/MessagesStorage.java",
+                "                                    if (oldMessage.out && !message.out) {\n"
+                "                                        message.out = oldMessage.out;\n"
+                "                                    }\n",
+                "                                    com.radolyn.ayugram.ngsave.NGSave.onMessageEdited(currentAccount, MessageObject.getDialogId(message), oldMessage, message);\n"
+                "                                    if (oldMessage.out && !message.out) {\n"
+                "                                        message.out = oldMessage.out;\n"
+                "                                    }\n",
+                "MessagesStorage edit hook")
+          # 3) MessagesController -------------------------------------------------------------------------------
+          patch("messenger/MessagesController.java",
+                "        final boolean welcomeMessages = mode == ChatActivity.MODE_WELCOME_MESSAGES;\n"
+                "        if ((messages == null || messages.isEmpty()) && taskId == 0) {\n"
+                "            return;\n"
+                "        }\n"
+                "        ArrayList<Integer> toSend = null;\n",
+                "        final boolean welcomeMessages = mode == ChatActivity.MODE_WELCOME_MESSAGES;\n"
+                "        if ((messages == null || messages.isEmpty()) && taskId == 0) {\n"
+                "            return;\n"
+                "        }\n"
+                "        if (messages != null && !messages.isEmpty() && !scheduled && !quickReplies && !welcomeMessages) {\n"
+                "            com.radolyn.ayugram.ngsave.NGSave.onOwnDelete(currentAccount, dialogId, messages);\n"
+                "        }\n"
+                "        ArrayList<Integer> toSend = null;\n",
+                "MessagesController own-delete hook")
+          patch("messenger/MessagesController.java",
+                "        LongSparseArray<ArrayList<Integer>> deletedMessagesFinal = deletedMessages;\n",
+                "        com.radolyn.ayugram.ngsave.NGSave.filterDeleted(currentAccount, deletedMessages);\n"
+                "        com.radolyn.ayugram.ngsave.NGSave.filterClearHistory(currentAccount, clearHistoryMessages);\n"
+                "        LongSparseArray<ArrayList<Integer>> deletedMessagesFinal = deletedMessages;\n",
+                "MessagesController update filter")
+          patch("messenger/MessagesController.java",
+                "    protected void deleteMessagesByPush(long dialogId, ArrayList<Integer> ids, long channelId) {\n",
+                "    protected void deleteMessagesByPush(long dialogId, ArrayList<Integer> ids, long channelId) {\n"
+                "        com.radolyn.ayugram.ngsave.NGSave.filterPush(currentAccount, channelId, ids);\n"
+                "        if (ids == null || ids.isEmpty()) {\n"
+                "            return;\n"
+                "        }\n",
+                "MessagesController push filter")
+          # 4) chat cell: marker next to the time --------------------------------------------------------------
+          patch("ui/Cells/ChatMessageCell.java",
+                "        if (currentMessageObject.isStakedDice()) {\n"
+                "            currentTimeString = TextUtils.concat(",
+                "        if (com.radolyn.ayugram.ngsave.NGSave.isMarked(currentAccount, currentMessageObject.getDialogId(), currentMessageObject.getId())) {\n"
+                "            currentTimeString = TextUtils.concat(com.radolyn.ayugram.ngsave.NGSave.markerText(), \"  \", currentTimeString);\n"
+                "        }\n"
+                "        if (currentMessageObject.isStakedDice()) {\n"
+                "            currentTimeString = TextUtils.concat(",
+                "ChatMessageCell marker")
+          # 5) ChatActivity -------------------------------------------------------------------------------------
+          patch("ui/ChatActivity.java",
+                "    public final static int OPTION_COPY = 3;\n",
+                "    public final static int OPTION_COPY = 3;\n"
+                "    public final static int OPTION_NG_EDIT_HISTORY = 9101;\n",
+                "ChatActivity option constant")
+          patch("ui/ChatActivity.java",
+                "            .add(NotificationCenter.messagesDeleted)\n",
+                "            .add(NotificationCenter.messagesDeleted)\n"
+                "            .add(NotificationCenter.ngSaveMessagesKept)\n",
+                "ChatActivity listener")
+          patch("ui/ChatActivity.java",
+                "        } else if (id == NotificationCenter.messagesDeleted) {\n",
+                "        } else if (id == NotificationCenter.ngSaveMessagesKept) {\n"
+                "            if (chatAdapter != null && args.length > 0 && args[0] instanceof Long && (Long) args[0] == dialog_id) {\n"
+                "                chatAdapter.notifyDataSetChanged();\n"
+                "            }\n"
+                "        } else if (id == NotificationCenter.messagesDeleted) {\n",
+                "ChatActivity notification handler")
+          patch("ui/ChatActivity.java",
+                "        if (type == -1) {\n"
+                "            if ((selectedObject.type == MessageObject.TYPE_TEXT || selectedObject.type == MessageObject.TYPE_ARTICLE",
+                "        if (com.radolyn.ayugram.ngsave.NGSave.hasEditHistory(currentAccount, dialog_id, selectedObject.getId())) {\n"
+                "            items.add(com.radolyn.ayugram.ngsave.NGStr.get(R.string.NGSaveEditHistory));\n"
+                "            options.add(OPTION_NG_EDIT_HISTORY);\n"
+                "            icons.add(R.drawable.msg_edit);\n"
+                "        }\n"
+                "        if (type == -1) {\n"
+                "            if ((selectedObject.type == MessageObject.TYPE_TEXT || selectedObject.type == MessageObject.TYPE_ARTICLE",
+                "ChatActivity menu item")
+          patch("ui/ChatActivity.java",
+                "            case OPTION_COPY: {\n",
+                "            case OPTION_NG_EDIT_HISTORY: {\n"
+                "                if (selectedObject != null) {\n"
+                "                    com.radolyn.ayugram.ngsave.NGSaveUi.showEditHistory(this, dialog_id, selectedObject.getId());\n"
+                "                }\n"
+                "                break;\n"
+                "            }\n"
+                "            case OPTION_COPY: {\n",
+                "ChatActivity menu action")
+          # 6) secret chats -----------------------------------------------------------------------------------
+          patch("messenger/MessagesStorage.java",
+                "                        ArrayList<Integer> mids = dialogs.valueAt(a);\n"
+                "                        AndroidUtilities.runOnUIThread(() -> getNotificationCenter().postNotificationName(NotificationCenter.messagesDeleted, mids, 0L, false));\n",
+                "                        ArrayList<Integer> mids = dialogs.valueAt(a);\n"
+                "                        com.radolyn.ayugram.ngsave.NGSave.filterSecret(currentAccount, dialogId, mids);\n"
+                "                        if (mids.isEmpty()) {\n"
+                "                            continue;\n"
+                "                        }\n"
+                "                        AndroidUtilities.runOnUIThread(() -> getNotificationCenter().postNotificationName(NotificationCenter.messagesDeleted, mids, 0L, false));\n",
+                "MessagesStorage secret delete hook")
+          patch("messenger/SecretChatHelper.java",
+                "                } else if (serviceMessage.action instanceof TLRPC.TL_decryptedMessageActionFlushHistory) {\n"
+                "                    long did = DialogObject.makeEncryptedDialogId(chat.id);\n",
+                "                } else if (serviceMessage.action instanceof TLRPC.TL_decryptedMessageActionFlushHistory) {\n"
+                "                    long did = DialogObject.makeEncryptedDialogId(chat.id);\n"
+                "                    if (com.radolyn.ayugram.ngsave.NGSave.keepSecretFlush(currentAccount, did)) {\n"
+                "                        return null;\n"
+                "                    }\n",
+                "SecretChatHelper flush hook")
+          # ---- write everything -----------------------------------------------------------------------------------
+          for p, s in pending.items():
+              with open(p, "w", encoding="utf-8") as f:
+                  f.write(s)
+          print("all core hooks applied")
+          NGEOF
+
+          cat > '/tmp/ng_fix_strings.py' <<'NGEOF'
+          #!/usr/bin/env python3
+          """Makes every NGram/Ghost screen read its strings from Android resources (fixes LOC_ERR:null) and
+          changes the subtitle under the NGram entry in Settings. Safe to run many times."""
+          import os, re, sys
+          ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
+          SRC = os.path.join(ROOT, "TMessagesProj/src/main")
+          pat = re.compile(r'(?:LocaleController\.)?getString\(R\.string\.((?:AyuGhost|NGramSettings|NGSave)\w*)\)')
+          changed = 0
+          for base, _, names in os.walk(os.path.join(SRC, "java")):
+              for n in names:
+                  if not n.endswith(".java"):
+                      continue
+                  p = os.path.join(base, n)
+                  s = open(p, encoding="utf-8").read()
+                  if "R.string.AyuGhost" not in s and "R.string.NGramSettings" not in s and "R.string.NGSave" not in s:
+                      continue
+                  s2 = pat.sub(r'com.radolyn.ayugram.ngsave.NGStr.get(R.string.\1)', s)
+                  if s2 != s:
+                      open(p, "w", encoding="utf-8").write(s2)
+                      changed += 1
+                      print("strings fixed:", os.path.relpath(p, SRC))
+          for d in ("values", "values-ru"):
+              p = os.path.join(SRC, "res", d, "strings.xml")
+              if os.path.exists(p):
+                  s = open(p, encoding="utf-8").read()
+                  s2 = s.replace('<string name="NGramSettingsInfo">Ghost mode</string>', '<string name="NGramSettingsInfo">Settings NGram</string>')
+                  if s2 != s:
+                      open(p, "w", encoding="utf-8").write(s2)
+                      print("subtitle changed in", d)
+          print("done,", changed, "java files changed")
+          NGEOF
+
+          cat > '/tmp/ng_patch_tweaks.py' <<'NGEOF'
+          #!/usr/bin/env python3
+          """NGram tweaks: screenshots, forwarding, Read until, Telegram ID. Every anchor must match exactly once, otherwise nothing is written."""
+          import os, re, sys
+          ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
+          JAVA = os.path.join(ROOT, "TMessagesProj/src/main/java/org/telegram")
+          pending = {}
+          def load(rel):
+              p = os.path.join(JAVA, rel)
+              if p not in pending:
+                  pending[p] = open(p, encoding="utf-8").read()
+              return p
+          def patch(rel, old, new, name):
+              p = load(rel)
+              s = pending[p]
+              if new in s and old not in s.replace(new, ""):
+                  print("already there:", name)
+                  return
+              n = s.count(old)
+              if n != 1:
+                  sys.exit("ANCHOR ERROR [%s] in %s: found %d times (expected 1)" % (name, rel, n))
+              pending[p] = s.replace(old, new, 1)
+              print("patched:", name)
+          # ---------------- screenshots (secret chats, protected chats, secret media) ----------------
+          patch("ui/ChatActivity.java",
+                "        flagSecure = new FlagSecureReason(getParentActivity().getWindow(), () ->\n"
+                "            currentEncryptedChat != null ||\n"
+                "            isPeerNoForwards()\n"
+                "        );\n",
+                "        flagSecure = new FlagSecureReason(getParentActivity().getWindow(), () -> false);\n",
+                "screenshots: ChatActivity")
+          patch("ui/ProfileActivity.java",
+                "() -> currentEncryptedChat != null || isPeerNoForwards());",
+                "() -> false);",
+                "screenshots: ProfileActivity")
+          patch("ui/PhotoViewer.java",
+                "            if (chatActivity != null && chatActivity.getCurrentEncryptedChat() != null ||\n"
+                "                avatarsDialogId != 0 && MessagesController.getInstance(currentAccount).isPeerNoForwards(avatarsDialogId) ||",
+                "            if (false ||\n"
+                "                avatarsDialogId != 0 && MessagesController.getInstance(currentAccount).isPeerNoForwards(avatarsDialogId) ||",
+                "screenshots: PhotoViewer")
+          patch("ui/SecretMediaViewer.java",
+                "        windowLayoutParams.flags |= WindowManager.LayoutParams.FLAG_SECURE;\n",
+                "        windowLayoutParams.flags &= ~WindowManager.LayoutParams.FLAG_SECURE;\n",
+                "screenshots: SecretMediaViewer")
+          patch("ui/SecretVoicePlayer.java",
+                "        if (!BuildVars.DEBUG_PRIVATE_VERSION) {\n            params.flags |= WindowManager.LayoutParams.FLAG_SECURE;",
+                "        if (false) {\n            params.flags |= WindowManager.LayoutParams.FLAG_SECURE;",
+                "screenshots: SecretVoicePlayer")
+          # ---------------- forwarding / copying restrictions ----------------
+          patch("messenger/MessagesController.java",
+                "                return migratedTo.noforwards;\n", "                return false;\n", "noforwards: migrated chat")
+          patch("messenger/MessagesController.java",
+                "        return chat.noforwards;\n", "        return false;\n", "noforwards: chat")
+          patch("messenger/MessagesController.java",
+                "        return userFull.noforwards_peer_enabled || userFull.noforwards_my_enabled;\n",
+                "        return false;\n", "noforwards: user")
+          patch("messenger/MessageObject.java",
+                "        return !(messageOwner instanceof TLRPC.TL_message_secret) && !needDrawBluredPreview()",
+                "        return !needDrawBluredPreview()", "forward: secret messages")
+          pat = re.compile(r"(?:[A-Za-z_][\w]*(?:\(\))?\.)*messageOwner\.noforwards\b(?!\s*=[^=])")
+          count = 0
+          for base, _, names in os.walk(JAVA):
+              if os.sep + "tgnet" in base:
+                  continue
+              for n in names:
+                  if not n.endswith(".java"):
+                      continue
+                  p = os.path.join(base, n)
+                  s = pending.get(p)
+                  if s is None:
+                      s = open(p, encoding="utf-8").read()
+                  if "messageOwner.noforwards" not in s:
+                      continue
+                  s2 = pat.sub("false", s)
+                  if s2 != s:
+                      pending[p] = s2
+                      count += 1
+          print("noforwards removed from", count, "files")
+          # ---------------- "Read until" really marks as read ----------------
+          patch("ui/ChatActivity.java",
+                "                AyuGhostUtils.markReadOnServer(currentAccount, selectedObject.getId(), getMessagesController().getInputPeer(selectedObject.messageOwner.peer_id));\n",
+                "                AyuGhostUtils.markReadOnServer(currentAccount, selectedObject.getId(), getMessagesController().getInputPeer(selectedObject.messageOwner.peer_id));\n"
+                "                {\n"
+                "                    int ngRead = 0;\n"
+                "                    for (int a = 0; a < messages.size(); a++) {\n"
+                "                        MessageObject ngMessage = messages.get(a);\n"
+                "                        if (ngMessage != null && !ngMessage.isOut() && ngMessage.getId() > 0 && ngMessage.getId() <= selectedObject.getId() && ngMessage.isUnread()) {\n"
+                "                            ngRead++;\n"
+                "                        }\n"
+                "                    }\n"
+                "                    com.radolyn.ayugram.ngsave.NGRead.afterReadUntil(currentAccount, getDialogId(), selectedObject.getId(), ngRead);\n"
+                "                }\n",
+                "Read until: local update")
+          # ---------------- Telegram ID row in user profiles ----------------
+          patch("ui/ProfileActivity.java",
+                "    private int usernameRow;\n", "    private int usernameRow;\n    private int ngIdRow = -1;\n", "ID row: field")
+          patch("ui/ProfileActivity.java",
+                "        usernameRow = -1;\n", "        usernameRow = -1;\n        ngIdRow = -1;\n", "ID row: reset")
+          patch("ui/ProfileActivity.java",
+                "                infoStartRow = rowCount;\n                if (!isBot && (hasPhone || !hasInfo)) {\n",
+                "                infoStartRow = rowCount;\n                if (userId != 0) {\n                    ngIdRow = rowCount++;\n                }\n                if (!isBot && (hasPhone || !hasInfo)) {\n",
+                "ID row: position")
+          patch("ui/ProfileActivity.java",
+                "            } else if (position == phoneRow || position == locationRow || position == numberRow || position == birthdayRow) {\n                return VIEW_TYPE_TEXT_DETAIL;",
+                "            } else if (position == ngIdRow || position == phoneRow || position == locationRow || position == numberRow || position == birthdayRow) {\n                return VIEW_TYPE_TEXT_DETAIL;",
+                "ID row: view type")
+          patch("ui/ProfileActivity.java",
+                "                    } else if (position == phoneRow) {\n                        String text;\n                        TLRPC.User user = getMessagesController().getUser(userId);\n                        String phoneNumber;",
+                "                    } else if (position == ngIdRow) {\n                        detailCell.setTextAndValue(String.valueOf(userId), \"Telegram ID\", true);\n"
+                "                    } else if (position == phoneRow) {\n                        String text;\n                        TLRPC.User user = getMessagesController().getUser(userId);\n                        String phoneNumber;",
+                "ID row: bind")
+          patch("ui/ProfileActivity.java",
+                "            } else if (position == usernameRow) {\n                processOnClickOrPress(position, view, x, y);",
+                "            } else if (position == usernameRow || position == ngIdRow) {\n                processOnClickOrPress(position, view, x, y);",
+                "ID row: click")
+          patch("ui/ProfileActivity.java",
+                "    private boolean processOnClickOrPress(final int position, final View view, final float x, final float y) {\n",
+                "    private boolean processOnClickOrPress(final int position, final View view, final float x, final float y) {\n"
+                "        if (ngIdRow != -1 && position == ngIdRow) {\n"
+                "            AndroidUtilities.addToClipboard(String.valueOf(userId));\n"
+                "            BulletinFactory.of(this).createCopyBulletin(LocaleController.getString(R.string.TextCopied)).show();\n"
+                "            return true;\n"
+                "        }\n",
+                "ID row: copy")
+          for p, s in pending.items():
+              open(p, "w", encoding="utf-8").write(s)
+          print("misc patches applied")
+          NGEOF
+
+      - name: Hook Save deleted into core
+        run: python3 /tmp/ng_patch_core.py .
+
+      - name: Fix strings and menu subtitle
+        run: python3 /tmp/ng_fix_strings.py .
+
+      - name: Tweaks
+        run: python3 /tmp/ng_patch_tweaks.py .
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "NGram 1 - Save deleted, menu, tweaks" || echo "nothing to commit"
+          git pull --rebase --autostash || true
+          git push origin HEAD

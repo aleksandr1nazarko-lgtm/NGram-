@@ -1,0 +1,518 @@
+name: NGram 3 - Local banners
+# Запуск: Actions -> NGram 3 - Local banners -> Run workflow. Нужен уже выполненный NGram 1.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write files
+        run: |
+          set -e
+          mkdir -p "$(dirname 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGBanner.java')"
+          cat > 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGBanner.java' <<'NGEOF'
+          /*
+           * NGram: local profile banners. Stored on this device only, never uploaded.
+           */
+          package com.radolyn.ayugram.ngsave;
+          import android.app.Activity;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.graphics.Bitmap;
+          import android.graphics.BitmapFactory;
+          import android.graphics.Canvas;
+          import android.graphics.Paint;
+          import android.graphics.Rect;
+          import android.net.Uri;
+          import org.telegram.messenger.AndroidUtilities;
+          import org.telegram.messenger.ApplicationLoader;
+          import org.telegram.messenger.FileLog;
+          import org.telegram.messenger.Utilities;
+          import org.telegram.ui.ActionBar.BaseFragment;
+          import java.io.File;
+          import java.io.FileOutputStream;
+          import java.io.InputStream;
+          import java.util.HashMap;
+          import java.util.HashSet;
+          public class NGBanner {
+              public static final int REQUEST_PICK = 9731;
+              private static SharedPreferences preferences;
+              private static final HashMap<Long, Bitmap> cache = new HashMap<>();
+              private static final HashSet<Long> loading = new HashSet<>();
+              private static final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
+              private static final Paint dimPaint = new Paint();
+              private static final Rect src = new Rect();
+              private static final Rect dst = new Rect();
+              private static synchronized SharedPreferences prefs() {
+                  if (preferences == null) {
+                      preferences = ApplicationLoader.applicationContext.getSharedPreferences("ngbanner", Activity.MODE_PRIVATE);
+                  }
+                  return preferences;
+              }
+              public static boolean enabled() {
+                  return prefs().getBoolean("enabled", true);
+              }
+              public static void setEnabled(boolean value) {
+                  prefs().edit().putBoolean("enabled", value).apply();
+              }
+              public static boolean dim() {
+                  return prefs().getBoolean("dim", true);
+              }
+              public static void setDim(boolean value) {
+                  prefs().edit().putBoolean("dim", value).apply();
+              }
+              private static File dir() {
+                  File d = new File(ApplicationLoader.applicationContext.getFilesDir(), "ngbanners");
+                  if (!d.exists()) {
+                      d.mkdirs();
+                  }
+                  return d;
+              }
+              private static File file(long key) {
+                  return new File(dir(), (key < 0 ? "c" + (-key) : "u" + key) + ".jpg");
+              }
+              public static boolean has(long key) {
+                  return key != 0 && file(key).exists();
+              }
+              /** Returns the banner bitmap or null. If it still has to be loaded, onLoaded is called later on the UI thread. */
+              public static Bitmap get(long key, Runnable onLoaded) {
+                  if (key == 0 || !enabled()) {
+                      return null;
+                  }
+                  synchronized (cache) {
+                      Bitmap b = cache.get(key);
+                      if (b != null) {
+                          return b;
+                      }
+                      if (loading.contains(key) || !file(key).exists()) {
+                          return null;
+                      }
+                      loading.add(key);
+                  }
+                  Utilities.globalQueue.postRunnable(() -> {
+                      Bitmap loaded = null;
+                      try {
+                          loaded = BitmapFactory.decodeFile(file(key).getAbsolutePath());
+                      } catch (Throwable e) {
+                          FileLog.e(e);
+                      }
+                      final Bitmap result = loaded;
+                      synchronized (cache) {
+                          loading.remove(key);
+                          if (result != null) {
+                              cache.put(key, result);
+                          }
+                      }
+                      if (result != null && onLoaded != null) {
+                          AndroidUtilities.runOnUIThread(onLoaded);
+                      }
+                  });
+                  return null;
+              }
+              public static void pick(BaseFragment fragment, int requestCode) {
+                  try {
+                      Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                      intent.setType("image/*");
+                      intent.addCategory(Intent.CATEGORY_OPENABLE);
+                      fragment.startActivityForResult(intent, requestCode);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+              /** Saves the chosen picture as the banner of the given profile. Calls done on the UI thread. */
+              public static void save(Context context, Uri uri, long key, Runnable done) {
+                  Utilities.globalQueue.postRunnable(() -> {
+                      try {
+                          BitmapFactory.Options bounds = new BitmapFactory.Options();
+                          bounds.inJustDecodeBounds = true;
+                          try (InputStream in = context.getContentResolver().openInputStream(uri)) {
+                              BitmapFactory.decodeStream(in, null, bounds);
+                          }
+                          int sample = 1;
+                          while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) {
+                              sample *= 2;
+                          }
+                          BitmapFactory.Options options = new BitmapFactory.Options();
+                          options.inSampleSize = sample;
+                          Bitmap bitmap;
+                          try (InputStream in = context.getContentResolver().openInputStream(uri)) {
+                              bitmap = BitmapFactory.decodeStream(in, null, options);
+                          }
+                          if (bitmap != null) {
+                              try (FileOutputStream out = new FileOutputStream(file(key))) {
+                                  bitmap.compress(Bitmap.CompressFormat.JPEG, 88, out);
+                              }
+                              synchronized (cache) {
+                                  cache.put(key, bitmap);
+                              }
+                          }
+                      } catch (Throwable e) {
+                          FileLog.e(e);
+                      }
+                      if (done != null) {
+                          AndroidUtilities.runOnUIThread(done);
+                      }
+                  });
+              }
+              public static void remove(long key) {
+                  synchronized (cache) {
+                      cache.remove(key);
+                  }
+                  file(key).delete();
+              }
+              public static void clearAll() {
+                  synchronized (cache) {
+                      cache.clear();
+                  }
+                  File[] files = dir().listFiles();
+                  if (files != null) {
+                      for (File f : files) {
+                          f.delete();
+                      }
+                  }
+              }
+              /** Handles the result of the gallery picker. Returns true if the result was ours. */
+              public static boolean handleResult(BaseFragment fragment, int requestCode, int resultCode, Intent data, long key, Runnable done) {
+                  if (requestCode != REQUEST_PICK) {
+                      return false;
+                  }
+                  if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null && key != 0 && fragment.getParentActivity() != null) {
+                      save(fragment.getParentActivity(), data.getData(), key, done);
+                  }
+                  return true;
+              }
+              /** Draws the bitmap like "center crop" into (0, 0, width, height). */
+              public static void draw(Canvas canvas, Bitmap bitmap, int width, int height) {
+                  if (bitmap == null || width <= 0 || height <= 0) {
+                      return;
+                  }
+                  float scale = Math.max(width / (float) bitmap.getWidth(), height / (float) bitmap.getHeight());
+                  int sw = Math.min(bitmap.getWidth(), Math.round(width / scale));
+                  int sh = Math.min(bitmap.getHeight(), Math.round(height / scale));
+                  int sx = (bitmap.getWidth() - sw) / 2;
+                  int sy = (bitmap.getHeight() - sh) / 2;
+                  src.set(sx, sy, sx + sw, sy + sh);
+                  dst.set(0, 0, width, height);
+                  canvas.drawBitmap(bitmap, src, dst, paint);
+                  if (dim()) {
+                      dimPaint.setColor(0x40000000);
+                      canvas.drawRect(dst, dimPaint);
+                  }
+              }
+          }
+          NGEOF
+
+          mkdir -p "$(dirname 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGBannerSettingsActivity.java')"
+          cat > 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGBannerSettingsActivity.java' <<'NGEOF'
+          /*
+           * NGram: "Local banners" settings screen.
+           */
+          package com.radolyn.ayugram.ngsave;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.FrameLayout;
+          import androidx.annotation.NonNull;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import androidx.recyclerview.widget.RecyclerView;
+          import org.telegram.messenger.R;
+          import org.telegram.messenger.UserConfig;
+          import org.telegram.ui.ActionBar.ActionBar;
+          import org.telegram.ui.ActionBar.AlertDialog;
+          import org.telegram.ui.ActionBar.BaseFragment;
+          import org.telegram.ui.ActionBar.Theme;
+          import org.telegram.ui.Cells.HeaderCell;
+          import org.telegram.ui.Cells.TextCell;
+          import org.telegram.ui.Cells.TextCheckCell;
+          import org.telegram.ui.Cells.TextInfoPrivacyCell;
+          import org.telegram.ui.Components.BulletinFactory;
+          import org.telegram.ui.Components.LayoutHelper;
+          import org.telegram.ui.Components.RecyclerListView;
+          public class NGBannerSettingsActivity extends BaseFragment {
+              // rows: 0 header, 1 enabled, 2 dim, 3 info, 4 header, 5 add, 6 remove own, 7 remove all, 8 info
+              private static final int ROWS = 9;
+              private RecyclerListView listView;
+              private RecyclerListView.SelectionAdapter adapter;
+              private long ownKey() {
+                  return UserConfig.getInstance(currentAccount).getClientUserId();
+              }
+              @Override
+              public View createView(Context context) {
+                  actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+                  actionBar.setAllowOverlayTitle(true);
+                  actionBar.setTitle("Local banners");
+                  actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                      @Override
+                      public void onItemClick(int id) {
+                          if (id == -1) {
+                              finishFragment();
+                          }
+                      }
+                  });
+                  fragmentView = new FrameLayout(context);
+                  FrameLayout frameLayout = (FrameLayout) fragmentView;
+                  frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+                  listView = new RecyclerListView(context);
+                  listView.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false));
+                  listView.setVerticalScrollBarEnabled(false);
+                  listView.setAdapter(adapter = new RecyclerListView.SelectionAdapter() {
+                      @NonNull
+                      @Override
+                      public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+                          View view;
+                          switch (viewType) {
+                              case 0:
+                                  view = new HeaderCell(context);
+                                  view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                                  break;
+                              case 1:
+                                  view = new TextCheckCell(context);
+                                  view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                                  break;
+                              case 2:
+                                  view = new TextCell(context);
+                                  view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                                  break;
+                              default:
+                                  view = new TextInfoPrivacyCell(context);
+                                  break;
+                          }
+                          return new RecyclerListView.Holder(view);
+                      }
+                      @Override
+                      public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+                          switch (position) {
+                              case 0:
+                                  ((HeaderCell) holder.itemView).setText("Баннеры");
+                                  break;
+                              case 1:
+                                  ((TextCheckCell) holder.itemView).setTextAndCheck("Показывать баннеры", NGBanner.enabled(), true);
+                                  break;
+                              case 2:
+                                  ((TextCheckCell) holder.itemView).setTextAndCheck("Затемнять баннер", NGBanner.dim(), false);
+                                  break;
+                              case 3:
+                                  ((TextInfoPrivacyCell) holder.itemView).setText("Баннер рисуется на фоне профиля. Он виден только вам и хранится на этом устройстве. Баннер любого другого профиля меняется карандашом в верхнем левом углу его страницы.");
+                                  break;
+                              case 4:
+                                  ((HeaderCell) holder.itemView).setText("Мой баннер");
+                                  break;
+                              case 5:
+                                  ((TextCell) holder.itemView).setText("Добавить баннер из галереи", true);
+                                  ((TextCell) holder.itemView).setColors(-1, Theme.key_windowBackgroundWhiteBlackText);
+                                  break;
+                              case 6:
+                                  ((TextCell) holder.itemView).setText("Убрать мой баннер", true);
+                                  ((TextCell) holder.itemView).setColors(-1, Theme.key_windowBackgroundWhiteBlackText);
+                                  break;
+                              case 7:
+                                  ((TextCell) holder.itemView).setText("Удалить все баннеры", false);
+                                  ((TextCell) holder.itemView).setColors(-1, Theme.key_text_RedRegular);
+                                  break;
+                              default:
+                                  ((TextInfoPrivacyCell) holder.itemView).setText("Изображение обрезается по размеру шапки профиля.");
+                                  break;
+                          }
+                      }
+                      @Override
+                      public int getItemCount() {
+                          return ROWS;
+                      }
+                      @Override
+                      public boolean isEnabled(RecyclerView.ViewHolder holder) {
+                          int t = holder.getItemViewType();
+                          return t == 1 || t == 2;
+                      }
+                      @Override
+                      public int getItemViewType(int position) {
+                          if (position == 0 || position == 4) {
+                              return 0;
+                          }
+                          if (position == 1 || position == 2) {
+                              return 1;
+                          }
+                          if (position >= 5 && position <= 7) {
+                              return 2;
+                          }
+                          return 3;
+                      }
+                  });
+                  frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                  listView.setOnItemClickListener((view, position) -> {
+                      if (position == 1) {
+                          NGBanner.setEnabled(!NGBanner.enabled());
+                          adapter.notifyDataSetChanged();
+                      } else if (position == 2) {
+                          NGBanner.setDim(!NGBanner.dim());
+                          adapter.notifyDataSetChanged();
+                      } else if (position == 5) {
+                          NGBanner.pick(this, NGBanner.REQUEST_PICK);
+                      } else if (position == 6) {
+                          NGBanner.remove(ownKey());
+                          BulletinFactory.of(this).createSuccessBulletin("Баннер убран").show();
+                      } else if (position == 7 && getParentActivity() != null) {
+                          AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                          builder.setTitle("Удалить все баннеры");
+                          builder.setMessage("Все локальные баннеры будут удалены с этого устройства.");
+                          builder.setPositiveButton("Удалить", (dialog, which) -> {
+                              NGBanner.clearAll();
+                              BulletinFactory.of(this).createSuccessBulletin("Готово").show();
+                          });
+                          builder.setNegativeButton("Отмена", null);
+                          showDialog(builder.create());
+                      }
+                  });
+                  return fragmentView;
+              }
+              @Override
+              public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
+                  NGBanner.handleResult(this, requestCode, resultCode, data, ownKey(), () -> BulletinFactory.of(this).createSuccessBulletin("Баннер добавлен").show());
+              }
+              @Override
+              public boolean isSupportEdgeToEdge() {
+                  return true;
+              }
+              @Override
+              public void onInsets(int left, int top, int right, int bottom) {
+                  listView.setPadding(0, 0, 0, bottom);
+                  listView.setClipToPadding(false);
+              }
+          }
+          NGEOF
+
+          cat > '/tmp/ng_patch_banners.py' <<'NGEOF'
+          #!/usr/bin/env python3
+          """NGram Local banners hooks. Every anchor must match exactly once, otherwise nothing is written."""
+          import os, re, sys
+
+          ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
+          JAVA = os.path.join(ROOT, "TMessagesProj/src/main/java/org/telegram")
+          pending = {}
+
+
+          def load(rel):
+              p = os.path.join(JAVA, rel)
+              if p not in pending:
+                  pending[p] = open(p, encoding="utf-8").read()
+              return p
+
+
+          def patch(rel, old, new, name):
+              p = load(rel)
+              s = pending[p]
+              if new in s and old not in s.replace(new, ""):
+                  print("already there:", name)
+                  return
+              n = s.count(old)
+              if n != 1:
+                  sys.exit("ANCHOR ERROR [%s] in %s: found %d times (expected 1)" % (name, rel, n))
+              pending[p] = s.replace(old, new, 1)
+              print("patched:", name)
+
+
+          # ---------------- Local banners ----------------
+          patch("ui/ProfileActivity.java",
+                "    private TopView topView;\n",
+                "    private TopView topView;\n    private ImageView ngBannerEdit;\n",
+                "Banners: field")
+          patch("ui/ProfileActivity.java",
+                "                if (hasEmoji) {\n                    final float loadedScale = emojiLoadedT.set(isEmojiLoaded());\n",
+                "                {\n"
+                "                    final long ngKey = userId != 0 ? userId : -chatId;\n"
+                "                    android.graphics.Bitmap ngBitmap = com.radolyn.ayugram.ngsave.NGBanner.get(ngKey, () -> invalidate());\n"
+                "                    if (ngBitmap != null) {\n"
+                "                        canvas.save();\n"
+                "                        canvas.clipRect(0, 0, getMeasuredWidth(), y1);\n"
+                "                        com.radolyn.ayugram.ngsave.NGBanner.draw(canvas, ngBitmap, getMeasuredWidth(), y1);\n"
+                "                        canvas.restore();\n"
+                "                    }\n"
+                "                    if (ngBannerEdit != null) {\n"
+                "                        float ngShow = Math.max(0f, Math.min(1f, (y1 - (height + dp(44))) / (float) dp(40)));\n"
+                "                        ngBannerEdit.setAlpha(ngShow);\n"
+                "                        ngBannerEdit.setTranslationY(height + dp(8) + Math.min(0, y1 - (height + dp(52))));\n"
+                "                    }\n"
+                "                }\n"
+                "                if (hasEmoji) {\n                    final float loadedScale = emojiLoadedT.set(isEmojiLoaded());\n",
+                "Banners: draw")
+          patch("ui/ProfileActivity.java",
+                "        frameLayout.addView(avatarContainer2, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.START, 0, 0, 0, 0));\n",
+                "        frameLayout.addView(avatarContainer2, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.START, 0, 0, 0, 0));\n"
+                "        ngBannerEdit = new ImageView(context);\n"
+                "        ngBannerEdit.setScaleType(ImageView.ScaleType.CENTER);\n"
+                "        ngBannerEdit.setImageResource(R.drawable.msg_edit);\n"
+                "        ngBannerEdit.setColorFilter(new android.graphics.PorterDuffColorFilter(0xFFFFFFFF, android.graphics.PorterDuff.Mode.MULTIPLY));\n"
+                "        ngBannerEdit.setBackground(Theme.createCircleDrawable(dp(36), 0x66000000));\n"
+                "        ngBannerEdit.setAlpha(0f);\n"
+                "        ngBannerEdit.setOnClickListener(ngView -> {\n"
+                "            if (ngView.getAlpha() < 0.5f || getParentActivity() == null) {\n"
+                "                return;\n"
+                "            }\n"
+                "            final long ngKey = userId != 0 ? userId : -chatId;\n"
+                "            AlertDialog.Builder ngBuilder = new AlertDialog.Builder(getParentActivity());\n"
+                "            ngBuilder.setTitle(\"Баннер\");\n"
+                "            CharSequence[] ngItems = com.radolyn.ayugram.ngsave.NGBanner.has(ngKey) ? new CharSequence[]{\"Выбрать из галереи\", \"Убрать баннер\"} : new CharSequence[]{\"Выбрать из галереи\"};\n"
+                "            ngBuilder.setItems(ngItems, (ngDialog, ngWhich) -> {\n"
+                "                if (ngWhich == 0) {\n"
+                "                    com.radolyn.ayugram.ngsave.NGBanner.pick(this, com.radolyn.ayugram.ngsave.NGBanner.REQUEST_PICK);\n"
+                "                } else {\n"
+                "                    com.radolyn.ayugram.ngsave.NGBanner.remove(ngKey);\n"
+                "                    topView.invalidate();\n"
+                "                }\n"
+                "            });\n"
+                "            showDialog(ngBuilder.create());\n"
+                "        });\n"
+                "        frameLayout.addView(ngBannerEdit, LayoutHelper.createFrame(36, 36, Gravity.TOP | Gravity.LEFT, 12, 0, 0, 0));\n",
+                "Banners: pencil")
+          patch("ui/ProfileActivity.java",
+                "    public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {\n        if (imageUpdater != null) {\n",
+                "    public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {\n"
+                "        if (com.radolyn.ayugram.ngsave.NGBanner.handleResult(this, requestCode, resultCode, data, userId != 0 ? userId : -chatId, () -> {\n"
+                "            if (topView != null) {\n"
+                "                topView.invalidate();\n"
+                "            }\n"
+                "        })) {\n"
+                "            return;\n"
+                "        }\n"
+                "        if (imageUpdater != null) {\n",
+                "Banners: picker result")
+
+
+          # ---- menu entry (NGram -> list) ----
+          menu = os.path.join(ROOT, "TMessagesProj/src/main/java/com/radolyn/ayugram/ui/preferences/NGramPreferencesActivity.java")
+          if not os.path.exists(menu):
+              sys.exit("NGramPreferencesActivity not found: run workflow 'NGram 1' first")
+          t = open(menu, encoding="utf-8").read()
+          old = "// NG-HOOK:banners\n                showSoon(index);"
+          new = "presentFragment(new com.radolyn.ayugram.ngsave.NGBannerSettingsActivity());"
+          if old in t:
+              open(menu, "w", encoding="utf-8").write(t.replace(old, new, 1))
+              print("menu hook set: banners")
+          elif new in t:
+              print("menu hook already there: banners")
+          else:
+              sys.exit("menu hook anchor not found: run workflow NGram 1 first")
+
+          for p, s in pending.items():
+              open(p, "w", encoding="utf-8").write(s)
+          print("misc patches applied")
+          NGEOF
+
+      - name: Hook Local banners
+        run: python3 /tmp/ng_patch_banners.py .
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "NGram 3 - Local banners" || echo "nothing to commit"
+          git pull --rebase --autostash || true
+          git push origin HEAD

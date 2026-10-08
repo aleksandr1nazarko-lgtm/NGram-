@@ -1,0 +1,230 @@
+name: NGram 2 - Local premium
+# Запуск: Actions -> NGram 2 - Local premium -> Run workflow. Нужен уже выполненный NGram 1.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write files
+        run: |
+          set -e
+          mkdir -p "$(dirname 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGPremium.java')"
+          cat > 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGPremium.java' <<'NGEOF'
+          /*
+           * NGram: Local premium switch (client side only, nothing is bought or sent to the server).
+           */
+          package com.radolyn.ayugram.ngsave;
+          import android.app.Activity;
+          import android.content.SharedPreferences;
+          import org.telegram.messenger.ApplicationLoader;
+          import org.telegram.messenger.MessagesController;
+          import org.telegram.messenger.NotificationCenter;
+          import org.telegram.messenger.UserConfig;
+          public class NGPremium {
+              private static SharedPreferences preferences;
+              private static Boolean cached;
+              private static synchronized SharedPreferences prefs() {
+                  if (preferences == null) {
+                      preferences = ApplicationLoader.applicationContext.getSharedPreferences("ngpremium", Activity.MODE_PRIVATE);
+                  }
+                  return preferences;
+              }
+              public static boolean enabled() {
+                  Boolean value = cached;
+                  if (value == null) {
+                      value = prefs().getBoolean("localPremium", false);
+                      cached = value;
+                  }
+                  return value;
+              }
+              public static void set(boolean value) {
+                  cached = value;
+                  prefs().edit().putBoolean("localPremium", value).apply();
+                  for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
+                      if (UserConfig.getInstance(a).isClientActivated()) {
+                          MessagesController.getInstance(a).updatePremium(value || UserConfig.getInstance(a).getCurrentUser() != null && UserConfig.getInstance(a).getCurrentUser().premium);
+                          NotificationCenter.getInstance(a).postNotificationName(NotificationCenter.currentUserPremiumStatusChanged);
+                      }
+                  }
+                  NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.premiumStatusChangedGlobal);
+              }
+          }
+          NGEOF
+
+          mkdir -p "$(dirname 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGLocalPremiumActivity.java')"
+          cat > 'TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGLocalPremiumActivity.java' <<'NGEOF'
+          /*
+           * NGram: "Local premium" screen.
+           */
+          package com.radolyn.ayugram.ngsave;
+          import android.content.Context;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.FrameLayout;
+          import androidx.annotation.NonNull;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import androidx.recyclerview.widget.RecyclerView;
+          import org.telegram.messenger.R;
+          import org.telegram.ui.ActionBar.ActionBar;
+          import org.telegram.ui.ActionBar.BaseFragment;
+          import org.telegram.ui.ActionBar.Theme;
+          import org.telegram.ui.Cells.TextCheckCell;
+          import org.telegram.ui.Cells.TextInfoPrivacyCell;
+          import org.telegram.ui.Components.LayoutHelper;
+          import org.telegram.ui.Components.RecyclerListView;
+          public class NGLocalPremiumActivity extends BaseFragment {
+              private RecyclerListView listView;
+              private RecyclerListView.SelectionAdapter adapter;
+              @Override
+              public View createView(Context context) {
+                  actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+                  actionBar.setAllowOverlayTitle(true);
+                  actionBar.setTitle("Local premium");
+                  actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                      @Override
+                      public void onItemClick(int id) {
+                          if (id == -1) {
+                              finishFragment();
+                          }
+                      }
+                  });
+                  fragmentView = new FrameLayout(context);
+                  FrameLayout frameLayout = (FrameLayout) fragmentView;
+                  frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+                  listView = new RecyclerListView(context);
+                  listView.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false));
+                  listView.setVerticalScrollBarEnabled(false);
+                  listView.setAdapter(adapter = new RecyclerListView.SelectionAdapter() {
+                      @NonNull
+                      @Override
+                      public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+                          View view;
+                          if (viewType == 0) {
+                              view = new TextCheckCell(context);
+                              view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                          } else {
+                              view = new TextInfoPrivacyCell(context);
+                          }
+                          return new RecyclerListView.Holder(view);
+                      }
+                      @Override
+                      public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+                          if (position == 0) {
+                              ((TextCheckCell) holder.itemView).setTextAndCheck("Премиум", NGPremium.enabled(), false);
+                          } else {
+                              ((TextInfoPrivacyCell) holder.itemView).setText("Включает премиум-функции только на этом устройстве: интерфейс, реакции, эмодзи-статусы и другие настройки, которые проверяют статус на стороне приложения. Всё, что решает сервер Telegram (лимиты загрузки, скорость скачивания, платные функции), локальный премиум не открывает. Ваш аккаунт остаётся без премиума, другие пользователи его не видят.");
+                          }
+                      }
+                      @Override
+                      public int getItemCount() {
+                          return 2;
+                      }
+                      @Override
+                      public boolean isEnabled(RecyclerView.ViewHolder holder) {
+                          return holder.getItemViewType() == 0;
+                      }
+                      @Override
+                      public int getItemViewType(int position) {
+                          return position == 0 ? 0 : 1;
+                      }
+                  });
+                  frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                  listView.setOnItemClickListener((view, position) -> {
+                      if (position == 0) {
+                          NGPremium.set(!NGPremium.enabled());
+                          adapter.notifyDataSetChanged();
+                      }
+                  });
+                  return fragmentView;
+              }
+              @Override
+              public boolean isSupportEdgeToEdge() {
+                  return true;
+              }
+              @Override
+              public void onInsets(int left, int top, int right, int bottom) {
+                  listView.setPadding(0, 0, 0, bottom);
+                  listView.setClipToPadding(false);
+              }
+          }
+          NGEOF
+
+          cat > '/tmp/ng_patch_premium.py' <<'NGEOF'
+          #!/usr/bin/env python3
+          """NGram Local premium hooks. Every anchor must match exactly once, otherwise nothing is written."""
+          import os, re, sys
+
+          ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
+          JAVA = os.path.join(ROOT, "TMessagesProj/src/main/java/org/telegram")
+          pending = {}
+
+
+          def load(rel):
+              p = os.path.join(JAVA, rel)
+              if p not in pending:
+                  pending[p] = open(p, encoding="utf-8").read()
+              return p
+
+
+          def patch(rel, old, new, name):
+              p = load(rel)
+              s = pending[p]
+              if new in s and old not in s.replace(new, ""):
+                  print("already there:", name)
+                  return
+              n = s.count(old)
+              if n != 1:
+                  sys.exit("ANCHOR ERROR [%s] in %s: found %d times (expected 1)" % (name, rel, n))
+              pending[p] = s.replace(old, new, 1)
+              print("patched:", name)
+
+
+          # ---------------- Local premium ----------------
+          patch("messenger/UserConfig.java",
+                "    public boolean isPremium() {\n        TLRPC.User user = currentUser;\n        if (user == null) {\n            return false;\n        }\n        return user.premium;\n",
+                "    public boolean isPremium() {\n        if (com.radolyn.ayugram.ngsave.NGPremium.enabled()) {\n            return true;\n        }\n        TLRPC.User user = currentUser;\n        if (user == null) {\n            return false;\n        }\n        return user.premium;\n",
+                "Local premium: UserConfig")
+          patch("messenger/MessagesController.java",
+                "        return currentUser != null && currentUser.premium && !isSupportUser(currentUser);\n",
+                "        return currentUser != null && (currentUser.premium || currentUser.id == getUserConfig().getClientUserId() && com.radolyn.ayugram.ngsave.NGPremium.enabled()) && !isSupportUser(currentUser);\n",
+                "Local premium: MessagesController")
+
+
+          # ---- menu entry (NGram -> list) ----
+          menu = os.path.join(ROOT, "TMessagesProj/src/main/java/com/radolyn/ayugram/ui/preferences/NGramPreferencesActivity.java")
+          if not os.path.exists(menu):
+              sys.exit("NGramPreferencesActivity not found: run workflow 'NGram 1' first")
+          t = open(menu, encoding="utf-8").read()
+          old = "// NG-HOOK:premium\n                showSoon(index);"
+          new = "presentFragment(new com.radolyn.ayugram.ngsave.NGLocalPremiumActivity());"
+          if old in t:
+              open(menu, "w", encoding="utf-8").write(t.replace(old, new, 1))
+              print("menu hook set: premium")
+          elif new in t:
+              print("menu hook already there: premium")
+          else:
+              sys.exit("menu hook anchor not found: run workflow NGram 1 first")
+
+          for p, s in pending.items():
+              open(p, "w", encoding="utf-8").write(s)
+          print("misc patches applied")
+          NGEOF
+
+      - name: Hook Local premium
+        run: python3 /tmp/ng_patch_premium.py .
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "NGram 2 - Local premium" || echo "nothing to commit"
+          git pull --rebase --autostash || true
+          git push origin HEAD
