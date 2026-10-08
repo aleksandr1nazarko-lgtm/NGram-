@@ -45803,11 +45803,6 @@ public class ChatActivity extends BaseFragment implements
             options.add(OPTION_NG_EDIT_HISTORY);
             icons.add(R.drawable.msg_edit);
         }
-        if (com.radolyn.ayugram.ngsave.NGSave.hasEditHistory(currentAccount, dialog_id, selectedObject.getId())) {
-            items.add(com.radolyn.ayugram.ngsave.NGStr.get(R.string.NGSaveEditHistory));
-            options.add(OPTION_NG_EDIT_HISTORY);
-            icons.add(R.drawable.msg_edit);
-        }
         if (type == -1) {
             if ((selectedObject.type == MessageObject.TYPE_TEXT || selectedObject.type == MessageObject.TYPE_ARTICLE || selectedObject.isAnimatedEmoji() || selectedObject.isAnimatedEmojiStickers() || getMessageCaption(selectedObject, selectedObjectGroup) != null) && (!noforwardsOrPaidMedia || isEphemeral) && !message.isExpiredStory()) {
                 items.add(LocaleController.getString(R.string.Copy));

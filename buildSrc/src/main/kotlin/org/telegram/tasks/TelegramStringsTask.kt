@@ -30,6 +30,17 @@ abstract class TelegramStringsTask : DefaultTask() {
             "AppNameBeta"
         )
 
+
+        // NGram: custom strings (Ghost mode, Save deleted, Local premium, Local banners, ...) are
+        // read directly from plain Android resources (see NGStr.java), unlike stock Telegram
+        // strings which only go through the generated localization_*.bin bundle. The resource
+        // shrinker must never remove them, or NGStr.get() starts returning empty text.
+        private val GENERATED_EXCLUSION_PREFIXES = listOf(
+            "Ayu",
+            "NGram",
+            "NGSave",
+            "NG"
+        )
         private val STABLE_IDS_EXCLUSIONS = setOf(
             "AppName",
             "AppNameBeta"
@@ -256,7 +267,10 @@ abstract class TelegramStringsTask : DefaultTask() {
 
         val discard = strings
             .asSequence()
-            .filterNot { GENERATED_EXCLUSIONS.contains(it) }
+            .filterNot { name ->
+                GENERATED_EXCLUSIONS.contains(name) ||
+                        GENERATED_EXCLUSION_PREFIXES.any { name.startsWith(it) }
+            }
             .joinToString(", ") { "@string/$it" }
 
         rawDir.resolve("strings_discard.xml")
