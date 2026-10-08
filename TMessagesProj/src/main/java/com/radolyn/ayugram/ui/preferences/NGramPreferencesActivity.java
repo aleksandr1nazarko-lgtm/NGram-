@@ -79,8 +79,7 @@ public class NGramPreferencesActivity extends BaseFragment {
             } else if (index == 2) {
                 presentFragment(new com.radolyn.ayugram.ngsave.NGLocalPremiumActivity());
             } else if (index == 3) {
-                // NG-HOOK:banners
-                showSoon(index);
+                presentFragment(new com.radolyn.ayugram.ngsave.NGBannerSettingsActivity());
             } else {
                 showSoon(index);
             }

@@ -461,6 +461,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     protected float headerShadowAlpha = 1.0f;
     private int actionBarBackgroundColor;
     private TopView topView;
+    private ImageView ngBannerEdit;
     private long userId;
     private long chatId;
     private long topicId;
@@ -1368,6 +1369,21 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 if (progressToGradient > 0) {
                     backgroundPaint.setAlpha((int) (0xFF * progressToGradient));
                     canvas.drawRect(0, 0, getMeasuredWidth(), y1, backgroundPaint);
+                }
+                {
+                    final long ngKey = userId != 0 ? userId : -chatId;
+                    android.graphics.Bitmap ngBitmap = com.radolyn.ayugram.ngsave.NGBanner.get(ngKey, () -> invalidate());
+                    if (ngBitmap != null) {
+                        canvas.save();
+                        canvas.clipRect(0, 0, getMeasuredWidth(), y1);
+                        com.radolyn.ayugram.ngsave.NGBanner.draw(canvas, ngBitmap, getMeasuredWidth(), y1);
+                        canvas.restore();
+                    }
+                    if (ngBannerEdit != null) {
+                        float ngShow = Math.max(0f, Math.min(1f, (y1 - (height + dp(44))) / (float) dp(40)));
+                        ngBannerEdit.setAlpha(ngShow);
+                        ngBannerEdit.setTranslationY(height + dp(8) + Math.min(0, y1 - (height + dp(52))));
+                    }
                 }
                 if (hasEmoji) {
                     final float loadedScale = emojiLoadedT.set(isEmojiLoaded());
@@ -5329,6 +5345,31 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         fallbackImage.setRoundRadius(AndroidUtilities.dp(11));
         AndroidUtilities.updateViewVisibilityAnimated(avatarContainer2, true, 1f, false);
         frameLayout.addView(avatarContainer2, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.START, 0, 0, 0, 0));
+        ngBannerEdit = new ImageView(context);
+        ngBannerEdit.setScaleType(ImageView.ScaleType.CENTER);
+        ngBannerEdit.setImageResource(R.drawable.msg_edit);
+        ngBannerEdit.setColorFilter(new android.graphics.PorterDuffColorFilter(0xFFFFFFFF, android.graphics.PorterDuff.Mode.MULTIPLY));
+        ngBannerEdit.setBackground(Theme.createCircleDrawable(dp(36), 0x66000000));
+        ngBannerEdit.setAlpha(0f);
+        ngBannerEdit.setOnClickListener(ngView -> {
+            if (ngView.getAlpha() < 0.5f || getParentActivity() == null) {
+                return;
+            }
+            final long ngKey = userId != 0 ? userId : -chatId;
+            AlertDialog.Builder ngBuilder = new AlertDialog.Builder(getParentActivity());
+            ngBuilder.setTitle("Баннер");
+            CharSequence[] ngItems = com.radolyn.ayugram.ngsave.NGBanner.has(ngKey) ? new CharSequence[]{"Выбрать из галереи", "Убрать баннер"} : new CharSequence[]{"Выбрать из галереи"};
+            ngBuilder.setItems(ngItems, (ngDialog, ngWhich) -> {
+                if (ngWhich == 0) {
+                    com.radolyn.ayugram.ngsave.NGBanner.pick(this, com.radolyn.ayugram.ngsave.NGBanner.REQUEST_PICK);
+                } else {
+                    com.radolyn.ayugram.ngsave.NGBanner.remove(ngKey);
+                    topView.invalidate();
+                }
+            });
+            showDialog(ngBuilder.create());
+        });
+        frameLayout.addView(ngBannerEdit, LayoutHelper.createFrame(36, 36, Gravity.TOP | Gravity.LEFT, 12, 0, 0, 0));
         avatarContainer.setPivotX(0);
         avatarContainer.setPivotY(0);
         avatarGooey = new ProfileGooeyView(context);
@@ -12962,6 +13003,13 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
     @Override
     public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
+        if (com.radolyn.ayugram.ngsave.NGBanner.handleResult(this, requestCode, resultCode, data, userId != 0 ? userId : -chatId, () -> {
+            if (topView != null) {
+                topView.invalidate();
+            }
+        })) {
+            return;
+        }
         if (imageUpdater != null) {
             imageUpdater.onActivityResult(requestCode, resultCode, data);
         }
