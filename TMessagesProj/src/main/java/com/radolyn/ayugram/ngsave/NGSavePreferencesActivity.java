@@ -70,7 +70,8 @@ public class NGSavePreferencesActivity extends BaseFragment {
     private void updateRows() {
         rows.clear();
         header(R.string.NGSaveHeaderDeleted);
-        check(NGSaveConfig.SAVE_DELETED, R.string.NGSaveDeleted, false);
+        check(NGSaveConfig.SAVE_DELETED, R.string.NGSaveDeleted, true);
+        check(NGSaveConfig.SAVE_OWN_DELETED, R.string.NGSaveOwnDeleted, false);
         info(R.string.NGSaveDeletedInfo);
         if (NGSaveConfig.get(NGSaveConfig.SAVE_DELETED)) {
             header(R.string.NGSaveHeaderChats);

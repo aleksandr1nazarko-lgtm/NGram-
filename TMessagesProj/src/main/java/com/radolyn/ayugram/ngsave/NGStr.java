@@ -13,6 +13,10 @@ import java.util.Locale;
 public class NGStr {
     private static Context russianContext;
     public static synchronized String get(int res) {
+        String ngText = NGTexts.find(res);
+        if (ngText != null) {
+            return ngText;
+        }
         try {
             if (russianContext == null) {
                 Context base = ApplicationLoader.applicationContext;

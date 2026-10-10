@@ -46,6 +46,7 @@ public class NGSave {
     private static final long OWN_DELETE_TTL_MS = 10 * 60 * 1000L;
     /** Messages that the user deleted himself on this device: these must really be deleted. */
     private static final ConcurrentHashMap<String, Long> ownDeleted = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Long> ownKept = new ConcurrentHashMap<>();
     /** account -> dialogId -> ids of messages that were kept after being deleted by someone else. */
     private static final ConcurrentHashMap<Long, Set<Integer>>[] marks = createMarks();
     private static volatile boolean marksLoaded;
@@ -143,20 +144,73 @@ public class NGSave {
                     it.remove();
                 }
             }
+            ownKept.clear();
             boolean channel = isChannelDialog(account, dialogId);
+            boolean keepOwn = dialogId != 0 && !DialogObject.isEncryptedDialog(dialogId)
+                    && NGSaveConfig.get(NGSaveConfig.SAVE_DELETED) && NGSaveConfig.get(NGSaveConfig.SAVE_OWN_DELETED);
+            HashSet<Integer> keepIds = new HashSet<>();
+            if (keepOwn) {
+                ensureMarksLoaded();
+                ArrayList<Integer> candidates = new ArrayList<>();
+                Set<Integer> marked = marks[account].get(dialogId);
+                for (int a = 0, n = ids.size(); a < n; a++) {
+                    int mid = ids.get(a);
+                    // уже помеченное удаляем по-настоящему
+                    if (mid > 0 && (marked == null || !marked.contains(mid))) {
+                        candidates.add(mid);
+                    }
+                }
+                if (!candidates.isEmpty()) {
+                    long ts = System.currentTimeMillis() / 1000;
+                    for (Found f : lookup(account, dialogId, candidates)) {
+                        if (shouldKeep(account, f.uid, f.msg)) {
+                            keepIds.add(f.mid);
+                            cacheAdd(account, f.uid, f.mid);
+                            NGSaveDb.getInstance().insertDeleted(account, f.uid, f.mid, ts);
+                        }
+                    }
+                }
+            }
             for (int a = 0, n = ids.size(); a < n; a++) {
                 int mid = ids.get(a);
+                if (keepIds.contains(mid)) {
+                    ownKept.put(ownKey(account, mid, channel), now);
+                    continue;
+                }
                 ownDeleted.put(ownKey(account, mid, channel), now);
                 if (marksLoaded) {
                     cacheRemove(account, dialogId, mid);
                 }
                 NGSaveDb.getInstance().deleteDeleted(account, dialogId, mid);
             }
+            if (!keepIds.isEmpty()) {
+                AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.ngSaveMessagesKept, dialogId));
+            }
         } catch (Throwable e) {
             FileLog.e(e);
         }
     }
-    private static boolean isOwnDeleted(int account, int mid, boolean channel) {
+    /** Какие из удаляемых id нужно реально убрать с устройства (сохранённые остаются). */
+    public static ArrayList<Integer> localDeleteList(int account, long dialogId, ArrayList<Integer> ids) {
+        try {
+            if (ids == null || ownKept.isEmpty()) {
+                return ids;
+            }
+            boolean channel = isChannelDialog(account, dialogId);
+            ArrayList<Integer> rest = new ArrayList<>();
+            for (int a = 0, n = ids.size(); a < n; a++) {
+                int mid = ids.get(a);
+                if (!ownKept.containsKey(ownKey(account, mid, channel))) {
+                    rest.add(mid);
+                }
+            }
+            return rest.size() == ids.size() ? ids : rest;
+        } catch (Throwable e) {
+            FileLog.e(e);
+            return ids;
+        }
+    }
+        private static boolean isOwnDeleted(int account, int mid, boolean channel) {
         Long t = ownDeleted.get(ownKey(account, mid, channel));
         return t != null && SystemClock.elapsedRealtime() - t <= OWN_DELETE_TTL_MS;
     }

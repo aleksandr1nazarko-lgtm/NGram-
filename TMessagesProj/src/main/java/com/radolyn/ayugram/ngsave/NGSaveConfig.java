@@ -25,6 +25,7 @@ public class NGSaveConfig {
     public static final String KEEP_CLEARED = "keepCleared";
     public static final String SHOW_MARKER = "showMarker";
     public static final String SAVE_EDITS = "saveEdits";
+    public static final String SAVE_OWN_DELETED = "saveOwnDeleted";
     public static final int MARKER_TEXT = 0;
     public static final int MARKER_ICON = 1;
     public static final int MARKER_BOTH = 2;

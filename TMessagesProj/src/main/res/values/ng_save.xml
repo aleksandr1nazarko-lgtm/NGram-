@@ -3,7 +3,7 @@
   <string name="NGSaveSettings">Save deleted</string>
   <string name="NGSaveHeaderDeleted">Deleted messages</string>
   <string name="NGSaveDeleted">Keep deleted messages</string>
-  <string name="NGSaveDeletedInfo">When someone else deletes a message, it stays in the chat and is marked as deleted. Messages you delete yourself are removed as usual.</string>
+  <string name="NGSaveDeletedInfo">When someone else deletes a message, it stays in the chat and is marked as deleted. Your own deleted messages are kept too if the option below is on.</string>
   <string name="NGSaveHeaderChats">Where to keep</string>
   <string name="NGSaveInPrivate">Private chats</string>
   <string name="NGSaveInBots">Bots</string>
@@ -45,4 +45,5 @@
   <string name="NGSaveClearTitle">Clear saved data</string>
   <string name="NGSaveClearMessage">This cannot be undone.</string>
   <string name="NGSaveCleared">Done</string>
+  <string name="NGSaveOwnDeleted">Keep your own deleted</string>
 </resources>

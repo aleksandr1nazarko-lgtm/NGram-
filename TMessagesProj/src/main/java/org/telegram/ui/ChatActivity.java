@@ -1206,7 +1206,6 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_APPLY_LOCALIZATION_OR_THEME = 5;
     public final static int OPTION_SHARE = 6;
     public final static int OPTION_SAVE_TO_GALLERY2 = 7;
-    public final static int OPTION_AYU_READ_UNTIL = 133803; // AyuGram ghost mode: "Read until"
     public final static int OPTION_REPLY = 8;
     public final static int OPTION_ADD_TO_STICKERS_OR_MASKS = 9;
     public final static int OPTION_SAVE_TO_DOWNLOADS_OR_MUSIC = 10;
@@ -30979,19 +30978,6 @@ public class ChatActivity extends BaseFragment implements
                 icons.add(R.drawable.msg_calendar2);
             }
 
-            // --- AyuGram ghost mode: manual "read until this message"
-            if (!AyuConfig.sendReadPackets
-                    && selectedObject != null
-                    && selectedObject.messageOwner != null
-                    && !selectedObject.isOutOwner()
-                    && selectedObject.getId() > 0
-                    && !DialogObject.isEncryptedDialog(getDialogId())) {
-                items.add(com.radolyn.ayugram.ngsave.NGStr.get(R.string.AyuGhostReadUntil));
-                options.add(OPTION_AYU_READ_UNTIL);
-                icons.add(R.drawable.msg_view_file);
-            }
-            // --- AyuGram ghost mode
-
             if (options.isEmpty() && optionsView == null) {
                 return false;
             }
@@ -33311,21 +33297,6 @@ public class ChatActivity extends BaseFragment implements
         }
         boolean preserveDim = false;
         switch (option) {
-            // --- AyuGram ghost mode
-            case OPTION_AYU_READ_UNTIL:
-                AyuGhostUtils.markReadOnServer(currentAccount, selectedObject.getId(), getMessagesController().getInputPeer(selectedObject.messageOwner.peer_id));
-                {
-                    int ngRead = 0;
-                    for (int a = 0; a < messages.size(); a++) {
-                        MessageObject ngMessage = messages.get(a);
-                        if (ngMessage != null && !ngMessage.isOut() && ngMessage.getId() > 0 && ngMessage.getId() <= selectedObject.getId() && ngMessage.isUnread()) {
-                            ngRead++;
-                        }
-                    }
-                    com.radolyn.ayugram.ngsave.NGRead.afterReadUntil(currentAccount, getDialogId(), selectedObject.getId(), ngRead);
-                }
-                break;
-            // --- AyuGram ghost mode
             case OPTION_RETRY: {
                 final MessageObject object = selectedObject;
                 final MessageObject.GroupedMessages group = selectedObjectGroup;
@@ -45798,7 +45769,7 @@ public class ChatActivity extends BaseFragment implements
             deleteIconRes = R.drawable.msg_delete;
         }
 
-        if (com.radolyn.ayugram.ngsave.NGSave.hasEditHistory(currentAccount, dialog_id, selectedObject.getId())) {
+        if (!options.contains(OPTION_NG_EDIT_HISTORY) && com.radolyn.ayugram.ngsave.NGSave.hasEditHistory(currentAccount, dialog_id, selectedObject.getId())) {
             items.add(com.radolyn.ayugram.ngsave.NGStr.get(R.string.NGSaveEditHistory));
             options.add(OPTION_NG_EDIT_HISTORY);
             icons.add(R.drawable.msg_edit);

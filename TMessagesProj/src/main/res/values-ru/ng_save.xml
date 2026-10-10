@@ -3,7 +3,7 @@
   <string name="NGSaveSettings">Save deleted</string>
   <string name="NGSaveHeaderDeleted">Удалённые сообщения</string>
   <string name="NGSaveDeleted">Сохранять удалённые сообщения</string>
-  <string name="NGSaveDeletedInfo">Если сообщение удалил кто-то другой, оно остаётся в чате с пометкой «удалено». Сообщения, которые вы удаляете сами, удаляются как обычно.</string>
+  <string name="NGSaveDeletedInfo">Если сообщение удалил собеседник или администратор, оно остаётся в чате с пометкой «удалено». Свои удалённые сообщения тоже сохраняются, если включена опция ниже.</string>
   <string name="NGSaveHeaderChats">Где сохранять</string>
   <string name="NGSaveInPrivate">Личные чаты</string>
   <string name="NGSaveInBots">Боты</string>
@@ -45,4 +45,5 @@
   <string name="NGSaveClearTitle">Очистка сохранённых данных</string>
   <string name="NGSaveClearMessage">Это действие нельзя отменить.</string>
   <string name="NGSaveCleared">Готово</string>
+  <string name="NGSaveOwnDeleted">Сохранять свои удалённые сообщения</string>
 </resources>

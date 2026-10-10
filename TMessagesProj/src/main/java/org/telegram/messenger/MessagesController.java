@@ -9344,6 +9344,10 @@ public class MessagesController extends BaseController implements NotificationCe
                     }
                 }
             }
+            ArrayList<Integer> ngLocal = messages;
+            if (!scheduled && !quickReplies && !welcomeMessages && !cacheOnly) {
+                ngLocal = com.radolyn.ayugram.ngsave.NGSave.localDeleteList(currentAccount, dialogId, messages);
+            }
             if (scheduled) {
                 getMessagesStorage().markMessagesAsDeleted(dialogId, messages, true, false, ChatActivity.MODE_SCHEDULED, 0);
             } else if (quickReplies) {
@@ -9354,21 +9358,25 @@ public class MessagesController extends BaseController implements NotificationCe
             } else if (welcomeMessages) {
                 getMessagesStorage().markMessagesAsDeleted(dialogId, messages, true, false, ChatActivity.MODE_WELCOME_MESSAGES, topicId);
             } else {
-                if (channelId == 0) {
-                    for (int a = 0; a < messages.size(); a++) {
-                        Integer id = messages.get(a);
-                        MessageObject obj = dialogMessagesByIds.get(id);
-                        if (obj != null) {
-                            obj.deleted = true;
+                if (!ngLocal.isEmpty()) {
+                    if (channelId == 0) {
+                        for (int a = 0; a < ngLocal.size(); a++) {
+                            Integer id = ngLocal.get(a);
+                            MessageObject obj = dialogMessagesByIds.get(id);
+                            if (obj != null) {
+                                obj.deleted = true;
+                            }
                         }
+                    } else {
+                        markDialogMessageAsDeleted(dialogId, ngLocal);
                     }
-                } else {
-                    markDialogMessageAsDeleted(dialogId, messages);
+                    getMessagesStorage().markMessagesAsDeleted(dialogId, ngLocal, true, forAll, 0, topicId);
+                    getMessagesStorage().updateDialogsWithDeletedMessages(dialogId, channelId, ngLocal, null);
                 }
-                getMessagesStorage().markMessagesAsDeleted(dialogId, messages, true, forAll, 0, topicId);
-                getMessagesStorage().updateDialogsWithDeletedMessages(dialogId, channelId, messages, null);
             }
-            getNotificationCenter().postNotificationName(NotificationCenter.messagesDeleted, messages, channelId, scheduled, false, movedToScheduled, movedToScheduledMessageId);
+            if (ngLocal == messages || !ngLocal.isEmpty()) {
+                getNotificationCenter().postNotificationName(NotificationCenter.messagesDeleted, ngLocal, channelId, scheduled, false, movedToScheduled, movedToScheduledMessageId);
+            }
         } else {
             if (taskRequest instanceof TLRPC.TL_channels_deleteMessages) {
                 channelId = ((TLRPC.TL_channels_deleteMessages) taskRequest).channel.channel_id;
