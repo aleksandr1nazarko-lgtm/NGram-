@@ -1,0 +1,405 @@
+name: NGram 5 - язык, Read until, история, свои удалённые
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write and run patch scripts
+        run: |
+          set -e
+          cat > /tmp/ng5_patch.py <<'PYEOF'
+          #!/usr/bin/env python3
+          # NGram 5: язык, Read until, История изменений, свои удалённые
+          import os, re, sys, json
+
+          SRC = "TMessagesProj/src/main"
+          JAVA = SRC + "/java"
+          RES = SRC + "/res"
+          CHAT = JAVA + "/org/telegram/ui/ChatActivity.java"
+          MC = JAVA + "/org/telegram/messenger/MessagesController.java"
+          GHOST = JAVA + "/com/radolyn/ayugram/ui/preferences/GhostPreferencesActivity.java"
+          NG = JAVA + "/com/radolyn/ayugram/ngsave"
+          SAVEPREF = NG + "/NGSavePreferencesActivity.java"
+          NGSAVE = NG + "/NGSave.java"
+          NGCONFIG = NG + "/NGSaveConfig.java"
+          NGSTR = NG + "/NGStr.java"
+          NGTEXTS = NG + "/NGTexts.java"
+          pending = {}
+
+
+          def rd(p):
+              if p not in pending:
+                  if not os.path.exists(p):
+                      sys.exit("ANCHOR ERROR: нет файла " + p)
+                  with open(p, encoding="utf-8") as f:
+                      pending[p] = f.read()
+              return pending[p]
+
+
+          def once(p, old, new, name, marker=None):
+              # строгая замена: якорь ровно один раз, повторный запуск ничего не меняет
+              s = rd(p)
+              if marker is not None and marker in s:
+                  print("уже есть:", name)
+                  return
+              n = s.count(old)
+              if n != 1:
+                  sys.exit("ANCHOR ERROR [%s] в %s: найдено %d раз (нужно 1)" % (name, p, n))
+              pending[p] = s.replace(old, new, 1)
+              print("правка:", name)
+
+
+          def res_file(d, f):
+              return RES + "/" + d + "/" + f
+
+
+          def all_keys(d):
+              keys = set()
+              base = RES + "/" + d
+              if os.path.isdir(base):
+                  for n in os.listdir(base):
+                      if n.endswith(".xml"):
+                          for k in re.findall(r'<string name="([^"]+)"', rd(base + "/" + n)):
+                              keys.add(k)
+              return keys
+
+
+          def put_string(d, f, key, text):
+              # дописывает строку, если ключа нет во всей папке d; иначе обновляет значение в своём файле
+              p = res_file(d, f)
+              if not os.path.exists(p) and p not in pending:
+                  pending[p] = '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n</resources>\n'
+              s = rd(p)
+              pat = re.compile(r'(<string name="' + re.escape(key) + r'">)(.*?)(</string>)', re.S)
+              if pat.search(s):
+                  pending[p] = pat.sub(lambda m: m.group(1) + text + m.group(3), s, count=1)
+                  return
+              if key in all_keys(d):
+                  return
+              if "</resources>" not in s:
+                  sys.exit("ANCHOR ERROR: нет </resources> в " + p)
+              pending[p] = s.replace("</resources>", '  <string name="%s">%s</string>\n</resources>' % (key, text), 1)
+              print("строка добавлена:", d + "/" + f, key)
+
+
+          # 1) Ghost: все строки через NGStr
+          s = rd(GHOST)
+          s2 = re.sub(r'(?:LocaleController\.)?getString\(R\.string\.(AyuGhost\w+)\)',
+                      r'com.radolyn.ayugram.ngsave.NGStr.get(R.string.\1)', s)
+          if "LocaleController.getString(R.string.AyuGhost" in s2:
+              sys.exit("ANCHOR ERROR: в GhostPreferencesActivity остались вызовы LocaleController")
+          pending[GHOST] = s2
+          print("Ghost: строки через NGStr")
+
+          GHOST_RU = {
+              "NGramSettings": "NGram", "NGramSettingsInfo": "Settings NGram", "AyuGhostSettings": "Ghost mode",
+              "AyuGhostEssentialsHeader": "Основное", "AyuGhostToggle": "Режим призрака",
+              "AyuGhostDontRead": "Не читать сообщения", "AyuGhostDontOnline": "Не отправлять «онлайн»",
+              "AyuGhostDontTyping": "Не отправлять «печатает»",
+              "AyuGhostOfflineAfterOnline": "Сразу «офлайн» после «онлайн»",
+              "AyuGhostMarkReadAfterSend": "Читать чат после моего ответа",
+              "AyuGhostInfo": "Режим призрака сразу включает первые четыре опции. Каждую опцию можно менять отдельно.",
+              "AyuGhostEnabled": "Режим призрака включён", "AyuGhostDisabled": "Режим призрака выключен",
+          }
+          GHOST_EN = {
+              "NGramSettings": "NGram", "NGramSettingsInfo": "Settings NGram", "AyuGhostSettings": "Ghost mode",
+              "AyuGhostEssentialsHeader": "Essentials", "AyuGhostToggle": "Ghost mode",
+              "AyuGhostDontRead": "Do not read messages", "AyuGhostDontOnline": "Do not send online status",
+              "AyuGhostDontTyping": "Do not send typing", "AyuGhostOfflineAfterOnline": "Go offline right after online",
+              "AyuGhostMarkReadAfterSend": "Read chat after my reply",
+              "AyuGhostInfo": "Ghost mode turns on the first four options at once. Each option can also be changed separately.",
+              "AyuGhostEnabled": "Ghost mode turned on", "AyuGhostDisabled": "Ghost mode turned off",
+          }
+          for k, v in GHOST_EN.items():
+              if k not in all_keys("values"):
+                  put_string("values", "ng_save.xml", k, v)
+          for k, v in GHOST_RU.items():
+              if k not in all_keys("values-ru"):
+                  put_string("values-ru", "strings.xml", k, v)
+
+          # 2) строки Save deleted: русские тексты и новая опция
+          DEL_INFO_RU = "Если сообщение удалил собеседник или администратор, оно остаётся в чате с пометкой «удалено». Свои удалённые сообщения тоже сохраняются, если включена опция ниже."
+          DEL_INFO_EN = "When someone else deletes a message, it stays in the chat and is marked as deleted. Your own deleted messages are kept too if the option below is on."
+          put_string("values", "ng_save.xml", "NGSaveDeletedInfo", DEL_INFO_EN)
+          put_string("values-ru", "ng_save.xml", "NGSaveDeletedInfo", DEL_INFO_RU)
+          put_string("values", "ng_save.xml", "NGSaveOwnDeleted", "Keep your own deleted")
+          put_string("values-ru", "ng_save.xml", "NGSaveOwnDeleted", "Сохранять свои удалённые сообщения")
+          put_string("values-ru", "ng_save.xml", "NGSaveEditHistory", "История изменений")
+          put_string("values-ru", "ng_save.xml", "NGSaveHeaderEdits", "История изменений")
+          missing = sorted(k for k in all_keys("values") if k.startswith("NGSave") and k not in all_keys("values-ru"))
+          if missing:
+              print("ВНИМАНИЕ: нет русского перевода для:", ", ".join(missing))
+
+          # 3) убрать Read until из меню сообщения
+          s = rd(CHAT)
+          if "OPTION_AYU_READ_UNTIL" not in s:
+              print("уже убрано: Read until")
+          else:
+              pat_menu = re.compile(r'[ ]*// --- AyuGram ghost mode: manual "read until this message"\n.*?[ ]*// --- AyuGram ghost mode\n\n', re.S)
+              pat_case = re.compile(r'[ ]*// --- AyuGram ghost mode\n[ ]*case OPTION_AYU_READ_UNTIL:\n.*?[ ]*break;\n[ ]*// --- AyuGram ghost mode\n', re.S)
+              pat_const = re.compile(r'[ ]*public final static int OPTION_AYU_READ_UNTIL = \d+;[^\n]*\n')
+              for name, pat in (("меню", pat_menu), ("case", pat_case), ("константа", pat_const)):
+                  found = pat.findall(s)
+                  if len(found) != 1:
+                      sys.exit("ANCHOR ERROR [Read until: %s] в ChatActivity: найдено %d раз (нужно 1)" % (name, len(found)))
+                  s = pat.sub("", s, count=1)
+              if "OPTION_AYU_READ_UNTIL" in s or "NGRead.afterReadUntil" in s:
+                  sys.exit("ANCHOR ERROR: после удаления остались ссылки на Read until в ChatActivity")
+              pending[CHAT] = s
+              print("правка: Read until удалён из ChatActivity")
+
+          # 4) История изменений: один пункт, текст через NGStr
+          s = rd(CHAT)
+          s = s.replace('items.add("Edit history");', 'items.add(com.radolyn.ayugram.ngsave.NGStr.get(R.string.NGSaveEditHistory));')
+          pat_eh = re.compile(r'[ ]*if \((?:!options\.contains\(OPTION_NG_EDIT_HISTORY\) && )?com\.radolyn\.ayugram\.ngsave\.NGSave\.hasEditHistory\(currentAccount, dialog_id, selectedObject\.getId\(\)\)\) \{\n[^{}]*\}\n')
+          blocks = list(pat_eh.finditer(s))
+          if not blocks:
+              sys.exit("ANCHOR ERROR [Edit history] в ChatActivity: блок меню не найден")
+          canon = ("        if (!options.contains(OPTION_NG_EDIT_HISTORY) && com.radolyn.ayugram.ngsave.NGSave.hasEditHistory(currentAccount, dialog_id, selectedObject.getId())) {\n"
+                   "            items.add(com.radolyn.ayugram.ngsave.NGStr.get(R.string.NGSaveEditHistory));\n"
+                   "            options.add(OPTION_NG_EDIT_HISTORY);\n"
+                   "            icons.add(R.drawable.msg_edit);\n"
+                   "        }\n")
+          out = []
+          last = 0
+          for i, m in enumerate(blocks):
+              out.append(s[last:m.start()])
+              if i == 0:
+                  out.append(canon)
+              last = m.end()
+          out.append(s[last:])
+          pending[CHAT] = "".join(out)
+          print("История изменений: блоков было %d, стал 1" % len(blocks))
+
+          # 5) свои удалённые сообщения
+          once(NGCONFIG, '    public static final String SAVE_EDITS = "saveEdits";\n',
+               '    public static final String SAVE_EDITS = "saveEdits";\n    public static final String SAVE_OWN_DELETED = "saveOwnDeleted";\n',
+               "NGSaveConfig.SAVE_OWN_DELETED", marker="SAVE_OWN_DELETED")
+          once(NGSAVE, '    private static final ConcurrentHashMap<String, Long> ownDeleted = new ConcurrentHashMap<>();\n',
+               '    private static final ConcurrentHashMap<String, Long> ownDeleted = new ConcurrentHashMap<>();\n'
+               '    private static final ConcurrentHashMap<String, Long> ownKept = new ConcurrentHashMap<>();\n',
+               "NGSave.ownKept", marker="ownKept = new")
+
+          NEW_OWN = '''    public static void onOwnDelete(int account, long dialogId, ArrayList<Integer> ids) {
+                  try {
+                      if (ids == null || ids.isEmpty()) {
+                          return;
+                      }
+                      long now = SystemClock.elapsedRealtime();
+                      Iterator<Map.Entry<String, Long>> it = ownDeleted.entrySet().iterator();
+                      while (it.hasNext()) {
+                          if (now - it.next().getValue() > OWN_DELETE_TTL_MS) {
+                              it.remove();
+                          }
+                      }
+                      ownKept.clear();
+                      boolean channel = isChannelDialog(account, dialogId);
+                      boolean keepOwn = dialogId != 0 && !DialogObject.isEncryptedDialog(dialogId)
+                              && NGSaveConfig.get(NGSaveConfig.SAVE_DELETED) && NGSaveConfig.get(NGSaveConfig.SAVE_OWN_DELETED);
+                      HashSet<Integer> keepIds = new HashSet<>();
+                      if (keepOwn) {
+                          ensureMarksLoaded();
+                          ArrayList<Integer> candidates = new ArrayList<>();
+                          Set<Integer> marked = marks[account].get(dialogId);
+                          for (int a = 0, n = ids.size(); a < n; a++) {
+                              int mid = ids.get(a);
+                              // уже помеченное удаляем по-настоящему
+                              if (mid > 0 && (marked == null || !marked.contains(mid))) {
+                                  candidates.add(mid);
+                              }
+                          }
+                          if (!candidates.isEmpty()) {
+                              long ts = System.currentTimeMillis() / 1000;
+                              for (Found f : lookup(account, dialogId, candidates)) {
+                                  if (shouldKeep(account, f.uid, f.msg)) {
+                                      keepIds.add(f.mid);
+                                      cacheAdd(account, f.uid, f.mid);
+                                      NGSaveDb.getInstance().insertDeleted(account, f.uid, f.mid, ts);
+                                  }
+                              }
+                          }
+                      }
+                      for (int a = 0, n = ids.size(); a < n; a++) {
+                          int mid = ids.get(a);
+                          if (keepIds.contains(mid)) {
+                              ownKept.put(ownKey(account, mid, channel), now);
+                              continue;
+                          }
+                          ownDeleted.put(ownKey(account, mid, channel), now);
+                          if (marksLoaded) {
+                              cacheRemove(account, dialogId, mid);
+                          }
+                          NGSaveDb.getInstance().deleteDeleted(account, dialogId, mid);
+                      }
+                      if (!keepIds.isEmpty()) {
+                          AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.ngSaveMessagesKept, dialogId));
+                      }
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+              /** Какие из удаляемых id нужно реально убрать с устройства (сохранённые остаются). */
+              public static ArrayList<Integer> localDeleteList(int account, long dialogId, ArrayList<Integer> ids) {
+                  try {
+                      if (ids == null || ownKept.isEmpty()) {
+                          return ids;
+                      }
+                      boolean channel = isChannelDialog(account, dialogId);
+                      ArrayList<Integer> rest = new ArrayList<>();
+                      for (int a = 0, n = ids.size(); a < n; a++) {
+                          int mid = ids.get(a);
+                          if (!ownKept.containsKey(ownKey(account, mid, channel))) {
+                              rest.add(mid);
+                          }
+                      }
+                      return rest.size() == ids.size() ? ids : rest;
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                      return ids;
+                  }
+              }
+          '''
+          t = rd(NGSAVE)
+          a0 = "    public static void onOwnDelete(int account, long dialogId, ArrayList<Integer> ids) {\n"
+          a1 = "    private static boolean isOwnDeleted(int account, int mid, boolean channel) {\n"
+          if "SAVE_OWN_DELETED" in t:
+              print("уже есть: NGSave.onOwnDelete")
+          else:
+              if t.count(a0) != 1 or t.count(a1) != 1:
+                  sys.exit("ANCHOR ERROR [NGSave.onOwnDelete]: границы метода не найдены однозначно")
+              i0 = t.index(a0)
+              i1 = t.index(a1)
+              if i1 < i0:
+                  sys.exit("ANCHOR ERROR [NGSave.onOwnDelete]: неверный порядок методов")
+              pending[NGSAVE] = t[:i0] + NEW_OWN + "    " + "" + t[i1:]
+              print("правка: NGSave.onOwnDelete + localDeleteList")
+
+          once(MC, "            if (scheduled) {\n                getMessagesStorage().markMessagesAsDeleted(dialogId, messages, true, false, ChatActivity.MODE_SCHEDULED, 0);\n",
+               "            ArrayList<Integer> ngLocal = messages;\n"
+               "            if (!scheduled && !quickReplies && !welcomeMessages && !cacheOnly) {\n"
+               "                ngLocal = com.radolyn.ayugram.ngsave.NGSave.localDeleteList(currentAccount, dialogId, messages);\n"
+               "            }\n"
+               "            if (scheduled) {\n                getMessagesStorage().markMessagesAsDeleted(dialogId, messages, true, false, ChatActivity.MODE_SCHEDULED, 0);\n",
+               "MessagesController: ngLocal", marker="ArrayList<Integer> ngLocal = messages;")
+          OLD_DEL = '''                if (channelId == 0) {
+                              for (int a = 0; a < messages.size(); a++) {
+                                  Integer id = messages.get(a);
+                                  MessageObject obj = dialogMessagesByIds.get(id);
+                                  if (obj != null) {
+                                      obj.deleted = true;
+                                  }
+                              }
+                          } else {
+                              markDialogMessageAsDeleted(dialogId, messages);
+                          }
+                          getMessagesStorage().markMessagesAsDeleted(dialogId, messages, true, forAll, 0, topicId);
+                          getMessagesStorage().updateDialogsWithDeletedMessages(dialogId, channelId, messages, null);
+                      }
+                      getNotificationCenter().postNotificationName(NotificationCenter.messagesDeleted, messages, channelId, scheduled, false, movedToScheduled, movedToScheduledMessageId);
+          '''
+          NEW_DEL = '''                if (!ngLocal.isEmpty()) {
+                              if (channelId == 0) {
+                                  for (int a = 0; a < ngLocal.size(); a++) {
+                                      Integer id = ngLocal.get(a);
+                                      MessageObject obj = dialogMessagesByIds.get(id);
+                                      if (obj != null) {
+                                          obj.deleted = true;
+                                      }
+                                  }
+                              } else {
+                                  markDialogMessageAsDeleted(dialogId, ngLocal);
+                              }
+                              getMessagesStorage().markMessagesAsDeleted(dialogId, ngLocal, true, forAll, 0, topicId);
+                              getMessagesStorage().updateDialogsWithDeletedMessages(dialogId, channelId, ngLocal, null);
+                          }
+                      }
+                      if (ngLocal == messages || !ngLocal.isEmpty()) {
+                          getNotificationCenter().postNotificationName(NotificationCenter.messagesDeleted, ngLocal, channelId, scheduled, false, movedToScheduled, movedToScheduledMessageId);
+                      }
+          '''
+          once(MC, OLD_DEL, NEW_DEL, "MessagesController: локальное удаление", marker="if (!ngLocal.isEmpty()) {")
+
+          once(SAVEPREF,
+               "        check(NGSaveConfig.SAVE_DELETED, R.string.NGSaveDeleted, false);\n        info(R.string.NGSaveDeletedInfo);\n",
+               "        check(NGSaveConfig.SAVE_DELETED, R.string.NGSaveDeleted, true);\n"
+               "        check(NGSaveConfig.SAVE_OWN_DELETED, R.string.NGSaveOwnDeleted, false);\n"
+               "        info(R.string.NGSaveDeletedInfo);\n",
+               "NGSavePreferencesActivity: чекбокс своих удалённых", marker="SAVE_OWN_DELETED")
+
+          # 6) NGStr читает тексты из NGTexts, а не из языковых ресурсов
+          prefixes = ("Ayu", "NGram", "NGSave", "NGAcc")
+          default_keys = {}
+          for n in sorted(os.listdir(RES + "/values")):
+              if n.endswith(".xml"):
+                  for k, v in re.findall(r'<string name="([^"]+)"[^>]*>(.*?)</string>', rd(RES + "/values/" + n), re.S):
+                      if k.startswith(prefixes):
+                          default_keys[k] = v
+          ru_texts = {}
+          if os.path.isdir(RES + "/values-ru"):
+              for n in sorted(os.listdir(RES + "/values-ru")):
+                  if n.endswith(".xml"):
+                      for k, v in re.findall(r'<string name="([^"]+)"[^>]*>(.*?)</string>', rd(RES + "/values-ru/" + n), re.S):
+                          ru_texts[k] = v
+
+
+          def unesc(t):
+              t = t.replace("\\'", "'").replace('\\"', '"').replace("\\n", "\n").replace("\\@", "@").replace("\\?", "?")
+              for a, b in (("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&apos;", "'"), ("&amp;", "&")):
+                  t = t.replace(a, b)
+              return t
+
+
+          lines = ["/* Сгенерировано workflow NGram 5: русские тексты NGram без языковых ресурсов. */",
+                   "package com.radolyn.ayugram.ngsave;",
+                   "import org.telegram.messenger.R;",
+                   "public class NGTexts {",
+                   "    public static String find(int id) {"]
+          for k in sorted(default_keys):
+              text = unesc(ru_texts.get(k, default_keys[k]))
+              lines.append("        if (id == R.string.%s) {" % k)
+              lines.append("            return %s;" % json.dumps(text, ensure_ascii=True))
+              lines.append("        }")
+          lines += ["        return null;", "    }", "}", ""]
+          pending[NGTEXTS] = "\n".join(lines)
+          print("NGTexts: строк %d" % len(default_keys))
+          once(NGSTR, "    public static synchronized String get(int res) {\n",
+               "    public static synchronized String get(int res) {\n"
+               "        String ngText = NGTexts.find(res);\n"
+               "        if (ngText != null) {\n"
+               "            return ngText;\n"
+               "        }\n",
+               "NGStr: NGTexts", marker="NGTexts.find(res)")
+
+          # запись только если все якоря найдены
+          for p, body in pending.items():
+              d = os.path.dirname(p)
+              if d:
+                  os.makedirs(d, exist_ok=True)
+              with open(p, "w", encoding="utf-8") as f:
+                  f.write(body)
+          print("NGram 5: все правки применены")
+          PYEOF
+          python3 /tmp/ng5_patch.py
+
+      - name: Commit and push
+        run: |
+          set -e
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Нечего коммитить"
+          else
+            git commit -m "NGram 5: русские строки, убран Read until, история изменений, свои удалённые"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            git push origin HEAD
+          fi
