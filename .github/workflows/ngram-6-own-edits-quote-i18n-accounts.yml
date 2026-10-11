@@ -1,0 +1,1512 @@
+name: NGram 6 - свои правки, цитата, язык, Accounts, сессии
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write files
+        run: |
+          set -e
+          mkdir -p TMessagesProj/src/main/java/com/radolyn/ayugram/ui/preferences TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave TMessagesProj/src/main/res/values TMessagesProj/src/main/res/values-ru
+          cat > TMessagesProj/src/main/java/com/radolyn/ayugram/ui/preferences/NGramAccountsActivity.java <<'JEOF'
+          /*
+           * NGram: Accounts section. Switch accounts, rename them locally, delete them,
+           * export and import sessions (.ngsess).
+           */
+          package com.radolyn.ayugram.ui.preferences;
+
+          import android.app.Activity;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.graphics.Canvas;
+          import android.net.Uri;
+          import android.text.TextUtils;
+          import android.util.TypedValue;
+          import android.view.Gravity;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.EditText;
+          import android.widget.FrameLayout;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+
+          import androidx.annotation.NonNull;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import androidx.recyclerview.widget.RecyclerView;
+
+          import com.radolyn.ayugram.ngsave.NGSession;
+          import com.radolyn.ayugram.ngsave.NGStr;
+
+          import org.telegram.messenger.AndroidUtilities;
+          import org.telegram.messenger.ApplicationLoader;
+          import org.telegram.messenger.FileLog;
+          import org.telegram.messenger.MessagesController;
+          import org.telegram.messenger.R;
+          import org.telegram.messenger.UserConfig;
+          import org.telegram.messenger.UserObject;
+          import org.telegram.messenger.Utilities;
+          import org.telegram.tgnet.TLRPC;
+          import org.telegram.ui.ActionBar.ActionBar;
+          import org.telegram.ui.ActionBar.ActionBarMenu;
+          import org.telegram.ui.ActionBar.ActionBarMenuItem;
+          import org.telegram.ui.ActionBar.AlertDialog;
+          import org.telegram.ui.ActionBar.BaseFragment;
+          import org.telegram.ui.ActionBar.SimpleTextView;
+          import org.telegram.ui.ActionBar.Theme;
+          import org.telegram.ui.Cells.HeaderCell;
+          import org.telegram.ui.Cells.TextInfoPrivacyCell;
+          import org.telegram.ui.Components.AvatarDrawable;
+          import org.telegram.ui.Components.BackupImageView;
+          import org.telegram.ui.Components.BulletinFactory;
+          import org.telegram.ui.Components.LayoutHelper;
+          import org.telegram.ui.Components.RecyclerListView;
+          import org.telegram.ui.LaunchActivity;
+
+          import java.util.ArrayList;
+          import java.util.Collections;
+
+          public class NGramAccountsActivity extends BaseFragment {
+              private static final int REQ_IMPORT = 7762;
+              private static final int MENU_IMPORT = 1;
+              private static final int TYPE_HEADER = 0;
+              private static final int TYPE_ACCOUNT = 1;
+              private static final int TYPE_INFO = 2;
+
+              private RecyclerListView listView;
+              private ListAdapter adapter;
+              private LinearLayout bottomBar;
+              private final ArrayList<Integer> accounts = new ArrayList<>();
+
+              private static SharedPreferences ngPrefs() {
+                  return ApplicationLoader.applicationContext.getSharedPreferences("ngram", Context.MODE_PRIVATE);
+              }
+
+              private static SharedPreferences namePrefs() {
+                  return ApplicationLoader.applicationContext.getSharedPreferences("ngram_accounts", Context.MODE_PRIVATE);
+              }
+
+              private void loadAccounts() {
+                  accounts.clear();
+                  for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
+                      if (UserConfig.getInstance(a).isClientActivated()) {
+                          accounts.add(a);
+                      }
+                  }
+                  Collections.sort(accounts, (o1, o2) -> Long.compare((long) UserConfig.getInstance(o1).loginTime, (long) UserConfig.getInstance(o2).loginTime));
+              }
+
+              private void reload() {
+                  loadAccounts();
+                  if (adapter != null) {
+                      adapter.notifyDataSetChanged();
+                  }
+              }
+
+              @Override
+              public boolean onFragmentCreate() {
+                  loadAccounts();
+                  return super.onFragmentCreate();
+              }
+
+              @Override
+              public void onResume() {
+                  super.onResume();
+                  reload();
+              }
+
+              @Override
+              public View createView(Context context) {
+                  actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+                  actionBar.setAllowOverlayTitle(true);
+                  actionBar.setTitle("Accounts");
+                  ActionBarMenu menu = actionBar.createMenu();
+                  ActionBarMenuItem other = menu.addItem(0, R.drawable.ic_ab_other);
+                  other.addSubItem(MENU_IMPORT, R.drawable.msg_download, NGStr.get(R.string.NGramImportSession));
+                  actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                      @Override
+                      public void onItemClick(int id) {
+                          if (id == -1) {
+                              finishFragment();
+                          } else if (id == MENU_IMPORT) {
+                              startImport();
+                          }
+                      }
+                  });
+
+                  FrameLayout frameLayout = new FrameLayout(context);
+                  fragmentView = frameLayout;
+                  frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+
+                  listView = new RecyclerListView(context);
+                  listView.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false));
+                  listView.setVerticalScrollBarEnabled(false);
+                  listView.setAdapter(adapter = new ListAdapter());
+                  listView.setPadding(0, 0, 0, AndroidUtilities.dp(130));
+                  listView.setClipToPadding(false);
+                  frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
+                  listView.setOnItemClickListener((view, position) -> {
+                      Integer account = accountAt(position);
+                      if (account != null && account != UserConfig.selectedAccount && LaunchActivity.instance != null) {
+                          LaunchActivity.instance.switchToAccount(account, true);
+                      }
+                  });
+                  listView.setOnItemLongClickListener((view, position) -> {
+                      Integer account = accountAt(position);
+                      if (account != null) {
+                          showActions(account);
+                          return true;
+                      }
+                      return false;
+                  });
+
+                  bottomBar = new LinearLayout(context);
+                  bottomBar.setOrientation(LinearLayout.VERTICAL);
+                  bottomBar.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                  bottomBar.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(10), AndroidUtilities.dp(16), AndroidUtilities.dp(10));
+                  bottomBar.addView(makeButton(context, NGStr.get(R.string.NGramExportAllSessions), v -> exportAll()),
+                          LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 46, 0, 0, 0, 8));
+                  bottomBar.addView(makeButton(context, NGStr.get(R.string.NGramImportSession), v -> startImport()),
+                          LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 46, 0, 0, 0, 0));
+                  frameLayout.addView(bottomBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
+
+                  return fragmentView;
+              }
+
+              private TextView makeButton(Context context, String text, View.OnClickListener listener) {
+                  TextView button = new TextView(context);
+                  button.setGravity(Gravity.CENTER);
+                  button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+                  button.setTypeface(AndroidUtilities.bold());
+                  button.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
+                  button.setBackground(Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(8),
+                          Theme.getColor(Theme.key_featuredStickers_addButton), Theme.getColor(Theme.key_featuredStickers_addButtonPressed)));
+                  button.setText(text);
+                  button.setOnClickListener(listener);
+                  return button;
+              }
+
+              @Override
+              public boolean isSupportEdgeToEdge() {
+                  return true;
+              }
+
+              @Override
+              public void onInsets(int left, int top, int right, int bottom) {
+                  if (bottomBar != null) {
+                      bottomBar.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(10), AndroidUtilities.dp(16), AndroidUtilities.dp(10) + bottom);
+                  }
+                  if (listView != null) {
+                      listView.setPadding(0, 0, 0, AndroidUtilities.dp(130) + bottom);
+                  }
+              }
+
+              private Integer accountAt(int position) {
+                  int index = position - 1;
+                  if (index >= 0 && index < accounts.size()) {
+                      return accounts.get(index);
+                  }
+                  return null;
+              }
+
+              private String displayName(int account) {
+                  UserConfig config = UserConfig.getInstance(account);
+                  String custom = namePrefs().getString("name_" + config.getClientUserId(), "");
+                  if (!TextUtils.isEmpty(custom)) {
+                      return custom;
+                  }
+                  TLRPC.User user = config.getCurrentUser();
+                  return user != null ? UserObject.getUserName(user) : "ID " + config.getClientUserId();
+              }
+
+              private void showActions(final int account) {
+                  if (getParentActivity() == null) {
+                      return;
+                  }
+                  AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                  builder.setTitle(displayName(account));
+                  CharSequence[] items = new CharSequence[]{
+                          NGStr.get(R.string.NGramAccRename),
+                          NGStr.get(R.string.NGramExportSession),
+                          NGStr.get(R.string.NGramAccDelete)
+                  };
+                  builder.setItems(items, (dialog, which) -> {
+                      if (which == 0) {
+                          showRename(account);
+                      } else if (which == 1) {
+                          askExport(new int[]{account});
+                      } else if (which == 2) {
+                          confirmDelete(account);
+                      }
+                  });
+                  showDialog(builder.create());
+              }
+
+              private void showRename(final int account) {
+                  if (getParentActivity() == null) {
+                      return;
+                  }
+                  final long userId = UserConfig.getInstance(account).getClientUserId();
+                  final EditText input = new EditText(getParentActivity());
+                  input.setSingleLine(true);
+                  input.setText(namePrefs().getString("name_" + userId, ""));
+                  input.setSelection(input.getText().length());
+                  input.setHint(NGStr.get(R.string.NGramAccRenameHint));
+                  input.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+                  input.setHintTextColor(Theme.getColor(Theme.key_dialogTextHint));
+                  FrameLayout box = new FrameLayout(getParentActivity());
+                  box.setPadding(AndroidUtilities.dp(24), AndroidUtilities.dp(8), AndroidUtilities.dp(24), 0);
+                  box.addView(input, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+                  AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                  builder.setTitle(NGStr.get(R.string.NGramAccRenameTitle));
+                  builder.setView(box);
+                  builder.setPositiveButton(NGStr.get(R.string.NGramSave), (dialog, which) -> {
+                      String value = input.getText().toString().trim();
+                      SharedPreferences.Editor editor = namePrefs().edit();
+                      if (value.isEmpty()) {
+                          editor.remove("name_" + userId);
+                      } else {
+                          editor.putString("name_" + userId, value);
+                      }
+                      editor.apply();
+                      reload();
+                  });
+                  builder.setNegativeButton(NGStr.get(R.string.NGramCancel), null);
+                  showDialog(builder.create());
+              }
+
+              private void confirmDelete(final int account) {
+                  if (getParentActivity() == null) {
+                      return;
+                  }
+                  AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                  builder.setTitle(NGStr.get(R.string.NGramAccDelete));
+                  builder.setMessage(NGStr.get(R.string.NGramAccDeleteMessage).replace("{name}", displayName(account)));
+                  builder.setPositiveButton(NGStr.get(R.string.NGramAccDelete), (dialog, which) -> {
+                      MessagesController.getInstance(account).performLogout(1);
+                      AndroidUtilities.runOnUIThread(this::reload, 700);
+                  });
+                  builder.setNegativeButton(NGStr.get(R.string.NGramCancel), null);
+                  showDialog(builder.create());
+              }
+
+              private void exportAll() {
+                  if (accounts.isEmpty()) {
+                      return;
+                  }
+                  int[] all = new int[accounts.size()];
+                  for (int i = 0; i < all.length; i++) {
+                      all[i] = accounts.get(i);
+                  }
+                  askExport(all);
+              }
+
+              private void askExport(final int[] targets) {
+                  if (getParentActivity() == null) {
+                      return;
+                  }
+                  if (ngPrefs().getBoolean("ngram_session_warned", false)) {
+                      chooseMode(targets);
+                      return;
+                  }
+                  AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                  builder.setTitle(NGStr.get(R.string.NGramExportWarnTitle));
+                  builder.setMessage(NGStr.get(R.string.NGramExportWarnMessage));
+                  builder.setPositiveButton(NGStr.get(R.string.NGramContinue), (dialog, which) -> {
+                      ngPrefs().edit().putBoolean("ngram_session_warned", true).apply();
+                      chooseMode(targets);
+                  });
+                  builder.setNegativeButton(NGStr.get(R.string.NGramCancel), null);
+                  showDialog(builder.create());
+              }
+
+              private void chooseMode(final int[] targets) {
+                  if (getParentActivity() == null) {
+                      return;
+                  }
+                  AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                  builder.setTitle(NGStr.get(R.string.NGramExportChoose));
+                  builder.setItems(new CharSequence[]{
+                          NGStr.get(R.string.NGramExportSessionOnly),
+                          NGStr.get(R.string.NGramExportSessionFull)
+                  }, (dialog, which) -> startExport(targets, which == 1));
+                  showDialog(builder.create());
+              }
+
+              private AlertDialog showProgress() {
+                  AlertDialog progress = new AlertDialog(getParentActivity(), AlertDialog.ALERT_TYPE_SPINNER);
+                  progress.setCanCancel(false);
+                  progress.show();
+                  return progress;
+              }
+
+              private void startExport(final int[] targets, final boolean withMessages) {
+                  if (getParentActivity() == null) {
+                      return;
+                  }
+                  final AlertDialog progress = showProgress();
+                  Utilities.globalQueue.postRunnable(() -> {
+                      final ArrayList<String> paths = new ArrayList<>();
+                      boolean failed = false;
+                      for (int account : targets) {
+                          try {
+                              paths.add(NGSession.export(ApplicationLoader.applicationContext, account, withMessages));
+                          } catch (NGSession.SessionException e) {
+                              FileLog.e(e);
+                              failed = true;
+                              break;
+                          }
+                      }
+                      final boolean error = failed;
+                      AndroidUtilities.runOnUIThread(() -> {
+                          try {
+                              progress.dismiss();
+                          } catch (Exception ignore) {
+                          }
+                          if (error) {
+                              BulletinFactory.of(this).createErrorBulletin(NGStr.get(R.string.NGramExportError)).show();
+                          } else {
+                              String shown = paths.size() == 1 ? paths.get(0) : "Download/NGram (" + paths.size() + ")";
+                              BulletinFactory.of(this).createSuccessBulletin(NGStr.get(R.string.NGramExportDone).replace("{path}", shown)).show();
+                          }
+                      });
+                  });
+              }
+
+              private void startImport() {
+                  if (getParentActivity() == null) {
+                      return;
+                  }
+                  try {
+                      Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                      intent.addCategory(Intent.CATEGORY_OPENABLE);
+                      intent.setType("*/*");
+                      startActivityForResult(intent, REQ_IMPORT);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+
+              @Override
+              public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
+                  if (requestCode == REQ_IMPORT) {
+                      if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
+                          doImport(data.getData());
+                      }
+                      return;
+                  }
+                  super.onActivityResultFragment(requestCode, resultCode, data);
+              }
+
+              private void doImport(final Uri uri) {
+                  if (getParentActivity() == null) {
+                      return;
+                  }
+                  final AlertDialog progress = showProgress();
+                  Utilities.globalQueue.postRunnable(() -> {
+                      int errorCode = 0;
+                      try {
+                          NGSession.importSession(ApplicationLoader.applicationContext, uri);
+                      } catch (NGSession.SessionException e) {
+                          FileLog.e(e);
+                          errorCode = e.code;
+                      }
+                      final int code = errorCode;
+                      AndroidUtilities.runOnUIThread(() -> {
+                          try {
+                              progress.dismiss();
+                          } catch (Exception ignore) {
+                          }
+                          if (code == 0) {
+                              showRestart();
+                          } else {
+                              int text = code == NGSession.ERR_NO_SLOT ? R.string.NGramImportNoSlot
+                                      : code == NGSession.ERR_BAD_FILE ? R.string.NGramImportBad
+                                      : code == NGSession.ERR_EXISTS ? R.string.NGramImportExists
+                                      : R.string.NGramImportError;
+                              BulletinFactory.of(this).createErrorBulletin(NGStr.get(text)).show();
+                          }
+                      });
+                  });
+              }
+
+              private void showRestart() {
+                  if (getParentActivity() == null) {
+                      return;
+                  }
+                  AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                  builder.setTitle(NGStr.get(R.string.NGramImportSession));
+                  builder.setMessage(NGStr.get(R.string.NGramImportRestart));
+                  builder.setPositiveButton(NGStr.get(R.string.NGramRestartButton), (dialog, which) -> NGSession.restartApp(ApplicationLoader.applicationContext));
+                  AlertDialog dialog = builder.create();
+                  dialog.setCanceledOnTouchOutside(false);
+                  showDialog(dialog);
+              }
+
+              private class AccountRowCell extends FrameLayout {
+                  private final BackupImageView avatarView;
+                  private final SimpleTextView nameView;
+                  private final SimpleTextView statusView;
+                  private final AvatarDrawable avatarDrawable = new AvatarDrawable();
+                  private boolean divider;
+
+                  AccountRowCell(Context context) {
+                      super(context);
+                      setWillNotDraw(false);
+                      avatarView = new BackupImageView(context);
+                      avatarView.setRoundRadius(AndroidUtilities.dp(22));
+                      addView(avatarView, LayoutHelper.createFrame(44, 44, Gravity.LEFT | Gravity.CENTER_VERTICAL, 16, 0, 0, 0));
+                      nameView = new SimpleTextView(context);
+                      nameView.setTextSize(16);
+                      nameView.setTypeface(AndroidUtilities.bold());
+                      nameView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                      nameView.setGravity(Gravity.LEFT);
+                      addView(nameView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 22, Gravity.LEFT | Gravity.TOP, 72, 11, 16, 0));
+                      statusView = new SimpleTextView(context);
+                      statusView.setTextSize(13);
+                      statusView.setGravity(Gravity.LEFT);
+                      addView(statusView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 18, Gravity.LEFT | Gravity.TOP, 72, 35, 16, 0));
+                  }
+
+                  void bind(int account, boolean needDivider) {
+                      divider = needDivider;
+                      TLRPC.User user = UserConfig.getInstance(account).getCurrentUser();
+                      avatarDrawable.setInfo(account, user);
+                      avatarView.getImageReceiver().setCurrentAccount(account);
+                      avatarView.setForUserOrChat(user, avatarDrawable);
+                      nameView.setText(displayName(account));
+                      boolean active = account == UserConfig.selectedAccount;
+                      statusView.setText(NGStr.get(active ? R.string.NGramAccActive : R.string.NGramAccInactive));
+                      statusView.setTextColor(Theme.getColor(active ? Theme.key_windowBackgroundWhiteGreenText : Theme.key_windowBackgroundWhiteGrayText2));
+                      setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                  }
+
+                  @Override
+                  protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                      super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(64), MeasureSpec.EXACTLY));
+                  }
+
+                  @Override
+                  protected void onDraw(Canvas canvas) {
+                      if (divider) {
+                          canvas.drawLine(AndroidUtilities.dp(72), getHeight() - 1, getWidth(), getHeight() - 1, Theme.dividerPaint);
+                      }
+                  }
+              }
+
+              private class ListAdapter extends RecyclerListView.SelectionAdapter {
+                  @NonNull
+                  @Override
+                  public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+                      View view;
+                      if (viewType == TYPE_HEADER) {
+                          view = new HeaderCell(getContext());
+                          view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                      } else if (viewType == TYPE_ACCOUNT) {
+                          view = new AccountRowCell(getContext());
+                      } else {
+                          view = new TextInfoPrivacyCell(getContext());
+                      }
+                      return new RecyclerListView.Holder(view);
+                  }
+
+                  @Override
+                  public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+                      int type = holder.getItemViewType();
+                      if (type == TYPE_HEADER) {
+                          ((HeaderCell) holder.itemView).setText(NGStr.get(R.string.NGramAccHeader));
+                      } else if (type == TYPE_ACCOUNT) {
+                          int index = position - 1;
+                          ((AccountRowCell) holder.itemView).bind(accounts.get(index), index < accounts.size() - 1);
+                      } else {
+                          ((TextInfoPrivacyCell) holder.itemView).setText(NGStr.get(R.string.NGramAccInfo));
+                      }
+                  }
+
+                  @Override
+                  public int getItemCount() {
+                      return accounts.size() + 2;
+                  }
+
+                  @Override
+                  public boolean isEnabled(RecyclerView.ViewHolder holder) {
+                      return holder.getItemViewType() == TYPE_ACCOUNT;
+                  }
+
+                  @Override
+                  public int getItemViewType(int position) {
+                      if (position == 0) {
+                          return TYPE_HEADER;
+                      }
+                      return position == getItemCount() - 1 ? TYPE_INFO : TYPE_ACCOUNT;
+                  }
+              }
+          }
+          JEOF
+          cat > TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGSession.java <<'JEOF'
+          /*
+           * NGram: export and import of account sessions (.ngsess is a plain ZIP).
+           * A session = tgnet.dat + dc*conf.dat (auth keys) + userconfig xml, optionally the message database.
+           */
+          package com.radolyn.ayugram.ngsave;
+
+          import android.app.AlarmManager;
+          import android.app.PendingIntent;
+          import android.content.ContentResolver;
+          import android.content.ContentValues;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Environment;
+          import android.provider.MediaStore;
+
+          import org.telegram.messenger.ApplicationLoader;
+          import org.telegram.messenger.FileLog;
+          import org.telegram.messenger.UserConfig;
+
+          import java.io.BufferedInputStream;
+          import java.io.BufferedOutputStream;
+          import java.io.File;
+          import java.io.FileInputStream;
+          import java.io.FileOutputStream;
+          import java.io.IOException;
+          import java.io.InputStream;
+          import java.io.OutputStream;
+          import java.util.ArrayList;
+          import java.util.regex.Matcher;
+          import java.util.regex.Pattern;
+          import java.util.zip.ZipEntry;
+          import java.util.zip.ZipInputStream;
+          import java.util.zip.ZipOutputStream;
+
+          public class NGSession {
+              public static final String EXT = ".ngsess";
+              public static final int ERR_BAD_FILE = 1;
+              public static final int ERR_NO_SLOT = 2;
+              public static final int ERR_EXISTS = 3;
+              public static final int ERR_IO = 4;
+
+              private static final long MAX_TOTAL = 3L * 1024 * 1024 * 1024;
+              private static final Pattern DC_FILE = Pattern.compile("^(dc\\d+conf|cdnkeys)\\.dat(\\.bak)?$");
+              private static final Pattern E_META = Pattern.compile("^meta\\.txt$");
+              private static final Pattern E_TGNET = Pattern.compile("^account(\\d+)\\.dat$");
+              private static final Pattern E_PREFS = Pattern.compile("^userconf(\\d+)\\.xml$");
+              private static final Pattern E_DB = Pattern.compile("^cache4_(\\d+)\\.db$");
+              private static final Pattern E_WAL = Pattern.compile("^cache4_(\\d+)\\.db-wal$");
+              private static final Pattern E_DC = Pattern.compile("^dcfiles/([A-Za-z0-9_]+\\.dat(\\.bak)?)$");
+
+              public static class SessionException extends Exception {
+                  public final int code;
+
+                  public SessionException(int code, String message) {
+                      super(message);
+                      this.code = code;
+                  }
+              }
+
+              private static File accountDir(int account) {
+                  File dir = ApplicationLoader.getFilesDirFixed();
+                  if (account != 0) {
+                      dir = new File(dir, "account" + account);
+                  }
+                  return dir;
+              }
+
+              private static File prefsFile(int account) {
+                  File shared = new File(ApplicationLoader.applicationContext.getApplicationInfo().dataDir, "shared_prefs");
+                  return new File(shared, (account == 0 ? "userconfing" : "userconfig" + account) + ".xml");
+              }
+
+              /** Сохраняет сессию аккаунта в Download/NGram и возвращает путь для показа. */
+              public static String export(Context context, int account, boolean withMessages) throws SessionException {
+                  File tmp = null;
+                  try {
+                      UserConfig config = UserConfig.getInstance(account);
+                      if (!config.isClientActivated()) {
+                          throw new SessionException(ERR_IO, "account is not active");
+                      }
+                      config.saveConfig(false);
+                      try {
+                          Thread.sleep(400);
+                      } catch (InterruptedException ignore) {
+                      }
+                      long userId = config.getClientUserId();
+                      tmp = new File(context.getCacheDir(), "ngsess_" + System.nanoTime() + EXT);
+                      try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(tmp)))) {
+                          zip.setLevel(5);
+                          putText(zip, "meta.txt", "ngram_session=1\nuserId=" + userId + "\nslot=" + account + "\nmessages=" + withMessages + "\n");
+                          File dir = accountDir(account);
+                          File[] files = dir.listFiles();
+                          if (files != null) {
+                              for (File f : files) {
+                                  String n = f.getName();
+                                  if (!f.isFile()) {
+                                      continue;
+                                  }
+                                  if (n.equals("tgnet.dat")) {
+                                      putFile(zip, "account" + account + ".dat", f);
+                                  } else if (DC_FILE.matcher(n).matches()) {
+                                      putFile(zip, "dcfiles/" + n, f);
+                                  }
+                              }
+                          }
+                          File prefs = prefsFile(account);
+                          if (prefs.exists()) {
+                              putFile(zip, "userconf" + account + ".xml", prefs);
+                          }
+                          if (withMessages) {
+                              File db = new File(dir, "cache4.db");
+                              if (db.exists()) {
+                                  putFile(zip, "cache4_" + account + ".db", db);
+                              }
+                              File wal = new File(dir, "cache4.db-wal");
+                              if (wal.exists()) {
+                                  putFile(zip, "cache4_" + account + ".db-wal", wal);
+                              }
+                          }
+                      }
+                      return saveToDownloads(context, tmp, "ngram_session_" + userId + "_" + System.currentTimeMillis() + EXT);
+                  } catch (SessionException e) {
+                      throw e;
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                      throw new SessionException(ERR_IO, String.valueOf(e));
+                  } finally {
+                      if (tmp != null) {
+                          tmp.delete();
+                      }
+                  }
+              }
+
+              private static void putText(ZipOutputStream zip, String name, String text) throws IOException {
+                  zip.putNextEntry(new ZipEntry(name));
+                  zip.write(text.getBytes("UTF-8"));
+                  zip.closeEntry();
+              }
+
+              private static void putFile(ZipOutputStream zip, String name, File file) throws IOException {
+                  zip.putNextEntry(new ZipEntry(name));
+                  try (InputStream in = new FileInputStream(file)) {
+                      copy(in, zip);
+                  }
+                  zip.closeEntry();
+              }
+
+              private static long copy(InputStream in, OutputStream out) throws IOException {
+                  byte[] buffer = new byte[64 * 1024];
+                  long total = 0;
+                  int n;
+                  while ((n = in.read(buffer)) > 0) {
+                      out.write(buffer, 0, n);
+                      total += n;
+                  }
+                  return total;
+              }
+
+              private static String saveToDownloads(Context context, File src, String name) throws IOException {
+                  if (Build.VERSION.SDK_INT >= 29) {
+                      ContentValues values = new ContentValues();
+                      values.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+                      values.put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream");
+                      values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/NGram");
+                      values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+                      ContentResolver resolver = context.getContentResolver();
+                      Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                      if (uri == null) {
+                          throw new IOException("MediaStore insert failed");
+                      }
+                      try (OutputStream out = resolver.openOutputStream(uri); InputStream in = new FileInputStream(src)) {
+                          if (out == null) {
+                              throw new IOException("openOutputStream failed");
+                          }
+                          copy(in, out);
+                      }
+                      ContentValues done = new ContentValues();
+                      done.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                      resolver.update(uri, done, null, null);
+                  } else {
+                      File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "NGram");
+                      if (!dir.exists() && !dir.mkdirs()) {
+                          throw new IOException("mkdirs failed");
+                      }
+                      try (OutputStream out = new FileOutputStream(new File(dir, name)); InputStream in = new FileInputStream(src)) {
+                          copy(in, out);
+                      }
+                  }
+                  return "Download/NGram/" + name;
+              }
+
+              /** Импортирует .ngsess в первый свободный слот. Возвращает номер слота. */
+              public static int importSession(Context context, Uri uri) throws SessionException {
+                  File tmpDir = new File(context.getCacheDir(), "ngsess_import_" + System.nanoTime());
+                  try {
+                      if (!tmpDir.mkdirs()) {
+                          throw new SessionException(ERR_IO, "cache dir");
+                      }
+                      try (InputStream raw = context.getContentResolver().openInputStream(uri)) {
+                          if (raw == null) {
+                              throw new SessionException(ERR_IO, "open failed");
+                          }
+                          BufferedInputStream in = new BufferedInputStream(raw);
+                          in.mark(8);
+                          byte[] magic = new byte[4];
+                          int read = 0;
+                          while (read < 4) {
+                              int n = in.read(magic, read, 4 - read);
+                              if (n < 0) {
+                                  break;
+                              }
+                              read += n;
+                          }
+                          if (read < 4 || magic[0] != 0x50 || magic[1] != 0x4B || magic[2] != 0x03 || magic[3] != 0x04) {
+                              throw new SessionException(ERR_BAD_FILE, "not a zip");
+                          }
+                          in.reset();
+                          unpack(in, tmpDir);
+                      }
+                      File meta = new File(tmpDir, "meta.txt");
+                      File tgnet = new File(tmpDir, "tgnet.dat");
+                      File prefs = new File(tmpDir, "userconf.xml");
+                      if (!meta.exists() || !tgnet.exists() || !prefs.exists()) {
+                          throw new SessionException(ERR_BAD_FILE, "missing files");
+                      }
+                      long userId = 0;
+                      try (InputStream in = new FileInputStream(meta)) {
+                          java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                          copy(in, bos);
+                          for (String line : bos.toString("UTF-8").split("\n")) {
+                              if (line.startsWith("userId=")) {
+                                  userId = Long.parseLong(line.substring(7).trim());
+                              }
+                          }
+                      } catch (NumberFormatException e) {
+                          throw new SessionException(ERR_BAD_FILE, "bad meta");
+                      }
+                      if (userId == 0) {
+                          throw new SessionException(ERR_BAD_FILE, "bad meta");
+                      }
+                      int slot = -1;
+                      for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
+                          UserConfig config = UserConfig.getInstance(a);
+                          if (config.isClientActivated()) {
+                              if (config.getClientUserId() == userId) {
+                                  throw new SessionException(ERR_EXISTS, "already added");
+                              }
+                          } else if (slot < 0) {
+                              slot = a;
+                          }
+                      }
+                      if (slot < 0) {
+                          throw new SessionException(ERR_NO_SLOT, "no free slot");
+                      }
+                      File dir = accountDir(slot);
+                      if (!dir.exists() && !dir.mkdirs()) {
+                          throw new SessionException(ERR_IO, "mkdirs");
+                      }
+                      File[] old = dir.listFiles();
+                      if (old != null) {
+                          for (File f : old) {
+                              String n = f.getName();
+                              if (n.startsWith("tgnet.dat") || DC_FILE.matcher(n).matches()) {
+                                  f.delete();
+                              }
+                          }
+                      }
+                      place(tgnet, new File(dir, "tgnet.dat"));
+                      File[] tmpFiles = tmpDir.listFiles();
+                      if (tmpFiles != null) {
+                          for (File f : tmpFiles) {
+                              if (f.getName().startsWith("dc_")) {
+                                  place(f, new File(dir, f.getName().substring(3)));
+                              }
+                          }
+                      }
+                      File prefsTarget = prefsFile(slot);
+                      File prefsDir = prefsTarget.getParentFile();
+                      if (prefsDir != null && !prefsDir.exists()) {
+                          prefsDir.mkdirs();
+                      }
+                      place(prefs, prefsTarget);
+                      File db = new File(tmpDir, "cache4.db");
+                      if (db.exists()) {
+                          new File(dir, "cache4.db").delete();
+                          new File(dir, "cache4.db-wal").delete();
+                          new File(dir, "cache4.db-shm").delete();
+                          place(db, new File(dir, "cache4.db"));
+                          File wal = new File(tmpDir, "cache4.db-wal");
+                          if (wal.exists()) {
+                              place(wal, new File(dir, "cache4.db-wal"));
+                          }
+                      }
+                      return slot;
+                  } catch (SessionException e) {
+                      throw e;
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                      throw new SessionException(ERR_IO, String.valueOf(e));
+                  } finally {
+                      deleteRecursive(tmpDir);
+                  }
+              }
+
+              private static void unpack(InputStream in, File tmpDir) throws IOException {
+                  long total = 0;
+                  try (ZipInputStream zip = new ZipInputStream(in)) {
+                      ZipEntry entry;
+                      while ((entry = zip.getNextEntry()) != null) {
+                          String name = entry.getName();
+                          String target = null;
+                          Matcher m;
+                          if (E_META.matcher(name).matches()) {
+                              target = "meta.txt";
+                          } else if (E_TGNET.matcher(name).matches()) {
+                              target = "tgnet.dat";
+                          } else if (E_PREFS.matcher(name).matches()) {
+                              target = "userconf.xml";
+                          } else if (E_DB.matcher(name).matches()) {
+                              target = "cache4.db";
+                          } else if (E_WAL.matcher(name).matches()) {
+                              target = "cache4.db-wal";
+                          } else if ((m = E_DC.matcher(name)).matches()) {
+                              target = "dc_" + m.group(1);
+                          }
+                          if (target == null || entry.isDirectory()) {
+                              continue;
+                          }
+                          try (OutputStream out = new FileOutputStream(new File(tmpDir, target))) {
+                              byte[] buffer = new byte[64 * 1024];
+                              int n;
+                              while ((n = zip.read(buffer)) > 0) {
+                                  total += n;
+                                  if (total > MAX_TOTAL) {
+                                      throw new IOException("session is too large");
+                                  }
+                                  out.write(buffer, 0, n);
+                              }
+                          }
+                      }
+                  }
+              }
+
+              private static void place(File from, File to) throws IOException {
+                  File part = new File(to.getParentFile(), to.getName() + ".part");
+                  try (InputStream in = new FileInputStream(from); OutputStream out = new FileOutputStream(part)) {
+                      copy(in, out);
+                  }
+                  if (to.exists() && !to.delete()) {
+                      throw new IOException("cannot replace " + to);
+                  }
+                  if (!part.renameTo(to)) {
+                      throw new IOException("cannot rename " + part);
+                  }
+              }
+
+              private static void deleteRecursive(File file) {
+                  File[] children = file.listFiles();
+                  if (children != null) {
+                      for (File c : children) {
+                          deleteRecursive(c);
+                      }
+                  }
+                  file.delete();
+              }
+
+              public static void restartApp(Context context) {
+                  try {
+                      Intent intent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+                      if (intent != null) {
+                          intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                          PendingIntent pending = PendingIntent.getActivity(context, 7761, intent, PendingIntent.FLAG_CANCEL_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                          AlarmManager alarm = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+                          if (alarm != null) {
+                              alarm.set(AlarmManager.RTC, System.currentTimeMillis() + 400, pending);
+                          }
+                      }
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+                  android.os.Process.killProcess(android.os.Process.myPid());
+                  System.exit(0);
+              }
+          }
+          JEOF
+          cat > TMessagesProj/src/main/java/com/radolyn/ayugram/ngsave/NGStr.java <<'JEOF'
+          /*
+           * NGram: string loader for NGram screens. Texts come from the generated NGTexts class
+           * (ru or en, chosen in NGram -> Language), then from Android resources as a fallback.
+           */
+          package com.radolyn.ayugram.ngsave;
+
+          import android.content.Context;
+          import android.content.SharedPreferences;
+          import android.content.res.Configuration;
+
+          import org.telegram.messenger.ApplicationLoader;
+          import org.telegram.messenger.FileLog;
+
+          import java.util.Locale;
+
+          public class NGStr {
+              private static final String PREFS = "ngram";
+              private static final String KEY_LANGUAGE = "ngram_language";
+              private static volatile String language;
+              private static Context russianContext;
+
+              private static SharedPreferences prefs() {
+                  return ApplicationLoader.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+              }
+
+              /** Возвращает "ru" или "en", по умолчанию "ru". */
+              public static String getLanguage() {
+                  String value = language;
+                  if (value == null) {
+                      try {
+                          value = prefs().getString(KEY_LANGUAGE, "ru");
+                      } catch (Throwable e) {
+                          value = "ru";
+                      }
+                      value = "en".equals(value) ? "en" : "ru";
+                      language = value;
+                  }
+                  return value;
+              }
+
+              public static void setLanguage(String lang) {
+                  String value = "en".equals(lang) ? "en" : "ru";
+                  language = value;
+                  try {
+                      prefs().edit().putString(KEY_LANGUAGE, value).apply();
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+
+              public static synchronized String get(int res) {
+                  String ngText = NGTexts.find(res);
+                  if (ngText != null) {
+                      return ngText;
+                  }
+                  try {
+                      Context base = ApplicationLoader.applicationContext;
+                      if ("en".equals(getLanguage())) {
+                          return base.getString(res);
+                      }
+                      if (russianContext == null) {
+                          Configuration configuration = new Configuration(base.getResources().getConfiguration());
+                          configuration.setLocale(new Locale("ru"));
+                          russianContext = base.createConfigurationContext(configuration);
+                      }
+                      return russianContext.getResources().getString(res);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                      return "";
+                  }
+              }
+          }
+          JEOF
+          cat > TMessagesProj/src/main/res/values/ng_session.xml <<'JEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <string name="NGramAccHeader">My accounts</string>
+            <string name="NGramAccInfo">Tap an account to switch to it. Long tap opens rename, session download and delete.</string>
+            <string name="NGramAccActive">Active</string>
+            <string name="NGramAccInactive">Inactive</string>
+            <string name="NGramAccRename">Rename</string>
+            <string name="NGramAccRenameTitle">Account name</string>
+            <string name="NGramAccRenameHint">Shown only on this device</string>
+            <string name="NGramAccDelete">Delete account</string>
+            <string name="NGramAccDeleteMessage">Log out of {name}? You will need a confirmation code to log in again.</string>
+            <string name="NGramExportSession">Download session</string>
+            <string name="NGramExportSessionFull">Session + messages</string>
+            <string name="NGramExportSessionOnly">Session only</string>
+            <string name="NGramExportDone">Session saved: {path}</string>
+            <string name="NGramExportAllSessions">Download all sessions</string>
+            <string name="NGramExportChoose">What to save?</string>
+            <string name="NGramExportError">Could not save the session</string>
+            <string name="NGramExportWarnTitle">Keep the session safe</string>
+            <string name="NGramExportWarnMessage">A session file gives full access to the account. Do not send it to anyone and store it in a safe place.</string>
+            <string name="NGramImportSession">Import session</string>
+            <string name="NGramImportNoSlot">No free slots</string>
+            <string name="NGramImportRestart">Session imported. The app will restart to apply it.</string>
+            <string name="NGramImportBad">This is not an NGram session file</string>
+            <string name="NGramImportExists">This account is already added</string>
+            <string name="NGramImportError">Could not import the session</string>
+            <string name="NGramRestartButton">Restart</string>
+            <string name="NGramContinue">Continue</string>
+            <string name="NGramCancel">Cancel</string>
+            <string name="NGramSave">Save</string>
+            <string name="NGramLangTitle">NGram language</string>
+          </resources>
+          JEOF
+          cat > TMessagesProj/src/main/res/values-ru/ng_session.xml <<'JEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <string name="NGramAccHeader">Мои аккаунты</string>
+            <string name="NGramAccInfo">Нажмите на аккаунт, чтобы перейти в него. Долгое нажатие: переименовать, скачать сессию или удалить.</string>
+            <string name="NGramAccActive">Активный</string>
+            <string name="NGramAccInactive">Неактивный</string>
+            <string name="NGramAccRename">Переименовать</string>
+            <string name="NGramAccRenameTitle">Название аккаунта</string>
+            <string name="NGramAccRenameHint">Видно только на этом устройстве</string>
+            <string name="NGramAccDelete">Удалить аккаунт</string>
+            <string name="NGramAccDeleteMessage">Выйти из аккаунта {name}? Чтобы войти снова, понадобится код подтверждения.</string>
+            <string name="NGramExportSession">Скачать сессию</string>
+            <string name="NGramExportSessionFull">Сессия + сообщения</string>
+            <string name="NGramExportSessionOnly">Только сессия</string>
+            <string name="NGramExportDone">Сессия сохранена: {path}</string>
+            <string name="NGramExportAllSessions">Скачать все сессии</string>
+            <string name="NGramExportChoose">Что сохранить?</string>
+            <string name="NGramExportError">Не удалось сохранить сессию</string>
+            <string name="NGramExportWarnTitle">Берегите сессию</string>
+            <string name="NGramExportWarnMessage">Файл сессии даёт полный доступ к аккаунту. Не передавайте его никому и храните в безопасном месте.</string>
+            <string name="NGramImportSession">Импортировать сессию</string>
+            <string name="NGramImportNoSlot">Нет свободных слотов</string>
+            <string name="NGramImportRestart">Сессия импортирована. Приложение будет перезапущено.</string>
+            <string name="NGramImportBad">Это не файл сессии NGram</string>
+            <string name="NGramImportExists">Этот аккаунт уже добавлен</string>
+            <string name="NGramImportError">Не удалось импортировать сессию</string>
+            <string name="NGramRestartButton">Перезапустить</string>
+            <string name="NGramContinue">Продолжить</string>
+            <string name="NGramCancel">Отмена</string>
+            <string name="NGramSave">Сохранить</string>
+            <string name="NGramLangTitle">Язык NGram</string>
+          </resources>
+          JEOF
+          cat > /tmp/msg_accounts.xml <<'JEOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp"
+              android:height="24dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M9,11.5c1.93,0 3.5,-1.57 3.5,-3.5S10.93,4.5 9,4.5 5.5,6.07 5.5,8s1.57,3.5 3.5,3.5zM9,13c-2.67,0 -8,1.34 -8,4v1.5h16L17,17c0,-2.66 -5.33,-4 -8,-4zM16.5,11.5c1.65,0 3,-1.35 3,-3s-1.35,-3 -3,-3c-0.3,0 -0.58,0.05 -0.85,0.13 0.57,0.76 0.9,1.7 0.9,2.72 0,1.02 -0.33,1.96 -0.9,2.72 0.27,0.08 0.55,0.13 0.85,0.13zM18.2,13.2c1.7,0.6 3.8,1.7 3.8,3.8v1.5h-3.5L18.5,17c0,-1.4 -0.1,-2.6 -0.3,-3.8z"/>
+          </vector>
+          JEOF
+
+      - name: Patch core files
+        run: |
+          set -e
+          cat > /tmp/ng6_patch.py <<'PYEOF'
+          #!/usr/bin/env python3
+          # NGram 6: свои правки, цитата удалённого, язык, раздел Accounts
+          import os, re, sys, json
+
+          SRC = "TMessagesProj/src/main"
+          JAVA = SRC + "/java"
+          RES = SRC + "/res"
+          NG = JAVA + "/com/radolyn/ayugram/ngsave"
+          PREF = JAVA + "/com/radolyn/ayugram/ui/preferences"
+          CHAT = JAVA + "/org/telegram/ui/ChatActivity.java"
+          SMH = JAVA + "/org/telegram/messenger/SendMessagesHelper.java"
+          NGSAVE = NG + "/NGSave.java"
+          MENU = PREF + "/NGramPreferencesActivity.java"
+          NGTEXTS = NG + "/NGTexts.java"
+          pending = {}
+
+
+          def rd(p):
+              if p not in pending:
+                  if not os.path.exists(p):
+                      sys.exit("ANCHOR ERROR: нет файла " + p)
+                  with open(p, encoding="utf-8") as f:
+                      pending[p] = f.read()
+              return pending[p]
+
+
+          def once(p, old, new, name, marker=None):
+              # строгая замена: якорь ровно один раз, повторный запуск ничего не меняет
+              s = rd(p)
+              if marker is not None and marker in s:
+                  print("уже есть:", name)
+                  return
+              n = s.count(old)
+              if n != 1:
+                  sys.exit("ANCHOR ERROR [%s] в %s: найдено %d раз (нужно 1)" % (name, p, n))
+              pending[p] = s.replace(old, new, 1)
+              print("правка:", name)
+
+
+          for need in (NGSAVE, NG + "/NGSaveDb.java", NG + "/NGSession.java", NG + "/NGStr.java",
+                       PREF + "/NGramAccountsActivity.java", MENU, CHAT, SMH):
+              if not os.path.exists(need):
+                  sys.exit("ANCHOR ERROR: нет файла " + need)
+          if "onMessageEdited" not in rd(NGSAVE):
+              sys.exit("ANCHOR ERROR: NGSave без onMessageEdited, сначала нужен NGram 1")
+
+          # 1) своя история изменений: старая версия пишется до отправки правки
+          once(NGSAVE, "    public static boolean hasEditHistory(int account, long dialogId, int mid) {\n",
+               '''    /** Свои правки: старый текст сохраняется до отправки правки на сервер. */
+              public static void onOwnEdit(int account, MessageObject mo, String newText) {
+                  try {
+                      if (mo == null || mo.messageOwner == null) {
+                          return;
+                      }
+                      TLRPC.Message old = mo.messageOwner;
+                      TLRPC.Message fresh = new TLRPC.TL_message();
+                      fresh.id = old.id;
+                      fresh.media = old.media;
+                      fresh.message = newText == null ? "" : newText;
+                      fresh.edit_date = (int) (System.currentTimeMillis() / 1000);
+                      onMessageEdited(account, mo.getDialogId(), old, fresh);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                  }
+              }
+
+              /** Текст для цитаты, если у помеченного удалённого сообщения нет своего текста. */
+              public static String quoteText(int account, MessageObject mo) {
+                  try {
+                      if (mo == null || mo.messageOwner == null) {
+                          return null;
+                      }
+                      String current = mo.messageOwner.message;
+                      if (current != null && !current.trim().isEmpty()) {
+                          return null;
+                      }
+                      long dialogId = mo.getDialogId();
+                      if (!isMarked(account, dialogId, mo.getId())) {
+                          return null;
+                      }
+                      String last = NGSaveDb.getInstance().getLastEditText(account, dialogId, mo.getId());
+                      if (last != null && !last.trim().isEmpty()) {
+                          return last;
+                      }
+                      return NGStr.get(R.string.NGSaveDeletedMarker);
+                  } catch (Throwable e) {
+                      FileLog.e(e);
+                      return null;
+                  }
+              }
+
+              public static boolean hasEditHistory(int account, long dialogId, int mid) {
+          ''', "NGSave.onOwnEdit + quoteText", marker="public static void onOwnEdit(")
+
+          once(SMH,
+               "    public int editMessage(MessageObject messageObject, String message, boolean searchLinks, final BaseFragment fragment, ArrayList<TLRPC.MessageEntity> entities, int scheduleDate, int scheduleRepeatPeriod) {\n"
+               "        if (fragment == null || fragment.getParentActivity() == null) {\n            return 0;\n        }\n",
+               "    public int editMessage(MessageObject messageObject, String message, boolean searchLinks, final BaseFragment fragment, ArrayList<TLRPC.MessageEntity> entities, int scheduleDate, int scheduleRepeatPeriod) {\n"
+               "        if (fragment == null || fragment.getParentActivity() == null) {\n            return 0;\n        }\n"
+               "        com.radolyn.ayugram.ngsave.NGSave.onOwnEdit(currentAccount, messageObject, message);\n",
+               "SendMessagesHelper: своя правка", marker="NGSave.onOwnEdit(currentAccount")
+
+          # 2) цитата удалённого сообщения
+          once(CHAT,
+               '''                if (end < start || end > message.messageOwner.message.length() || start > message.messageOwner.message.length() || start < 0 || end < 0) {
+                              FileLog.e("ReplyQuote: start/end are invalid (" + start + ", " + end + ", len=" + message.messageOwner.message.length() + ")");
+                              return false;
+                          }
+                          final String fulltext = message.messageOwner.message;
+          ''',
+               '''                final String ngOverride = com.radolyn.ayugram.ngsave.NGSave.quoteText(message.currentAccount, message);
+                          final String fulltext = ngOverride != null ? ngOverride : message.messageOwner.message;
+                          if (end < start || end > fulltext.length() || start > fulltext.length() || start < 0 || end < 0) {
+                              FileLog.e("ReplyQuote: start/end are invalid (" + start + ", " + end + ", len=" + fulltext.length() + ")");
+                              return false;
+                          }
+          ''', "ChatActivity: цитата, источник текста", marker="final String ngOverride = ")
+          once(CHAT,
+               '''                text = message.messageOwner.message.substring(realStart, realEnd);
+                          if (entities != null) {
+                              entities.clear();
+                          }
+                          if (message.messageOwner.entities != null && !message.messageOwner.entities.isEmpty()) {
+          ''',
+               '''                text = fulltext.substring(realStart, realEnd);
+                          if (entities != null) {
+                              entities.clear();
+                          }
+                          if (ngOverride == null && message.messageOwner.entities != null && !message.messageOwner.entities.isEmpty()) {
+          ''', "ChatActivity: цитата, текст и entities", marker="if (ngOverride == null && message.messageOwner.entities")
+          once(CHAT,
+               "            return from(messageObject, 0, Math.min(MessagesController.getInstance(messageObject.currentAccount).quoteLengthMax, messageObject.messageOwner.message.length()));\n",
+               "            String ngSrc = com.radolyn.ayugram.ngsave.NGSave.quoteText(messageObject.currentAccount, messageObject);\n"
+               "            int ngLen = ngSrc != null ? ngSrc.length() : messageObject.messageOwner.message.length();\n"
+               "            return from(messageObject, 0, Math.min(MessagesController.getInstance(messageObject.currentAccount).quoteLengthMax, ngLen));\n",
+               "ChatActivity: цитата, длина", marker="String ngSrc = com.radolyn")
+
+          # 3) иконка Accounts, если её нет в проекте
+          has_icon = False
+          for d in os.listdir(RES):
+              if d.startswith("drawable") and os.path.isdir(RES + "/" + d):
+                  for n in os.listdir(RES + "/" + d):
+                      if n.split(".")[0] == "msg_accounts":
+                          has_icon = True
+          if not has_icon:
+              with open("/tmp/msg_accounts.xml", encoding="utf-8") as f:
+                  pending[RES + "/drawable/msg_accounts.xml"] = f.read()
+              print("иконка msg_accounts создана")
+
+          # 4) меню NGram: Accounts после Save deleted, пункт Language, выбор по названию
+          has_premium = os.path.exists(NG + "/NGLocalPremiumActivity.java")
+          has_banners = os.path.exists(NG + "/NGBannerSettingsActivity.java")
+          premium = "presentFragment(new com.radolyn.ayugram.ngsave.NGLocalPremiumActivity());" if has_premium else "showSoon(index);"
+          banners = "presentFragment(new com.radolyn.ayugram.ngsave.NGBannerSettingsActivity());" if has_banners else "showSoon(index);"
+          MENU_SRC = '''/*
+           * NGram settings section: list of NGram features.
+           * Item names are intentionally in English, everything inside the screens follows the NGram language.
+           */
+          package com.radolyn.ayugram.ui.preferences;
+          import android.content.Context;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.FrameLayout;
+          import androidx.annotation.NonNull;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import androidx.recyclerview.widget.RecyclerView;
+          import com.radolyn.ayugram.ngsave.NGSavePreferencesActivity;
+          import com.radolyn.ayugram.ngsave.NGStr;
+          import org.telegram.messenger.NotificationCenter;
+          import org.telegram.messenger.R;
+          import org.telegram.ui.ActionBar.ActionBar;
+          import org.telegram.ui.ActionBar.AlertDialog;
+          import org.telegram.ui.ActionBar.BaseFragment;
+          import org.telegram.ui.ActionBar.Theme;
+          import org.telegram.ui.Cells.HeaderCell;
+          import org.telegram.ui.Cells.TextCell;
+          import org.telegram.ui.Components.LayoutHelper;
+          import org.telegram.ui.Components.RecyclerListView;
+          public class NGramPreferencesActivity extends BaseFragment {
+              private static final int TYPE_HEADER = 0;
+              private static final int TYPE_TEXT = 1;
+              private static final String[] TITLES = {
+                      "Ghost mode",
+                      "Save deleted",
+                      "Accounts",
+                      "Local premium",
+                      "Local banners",
+                      "Language",
+                      "Proxy",
+                      "Plugins"
+              };
+              private static final int[] ICONS = {
+                      R.drawable.ayu_ghost,
+                      R.drawable.msg_delete,
+                      R.drawable.msg_accounts,
+                      R.drawable.msg_premium_prolfilestar,
+                      R.drawable.msg_gallery,
+                      R.drawable.msg_language,
+                      R.drawable.msg_settings,
+                      R.drawable.msg_fave
+              };
+              private static final int[] COLORS = {
+                      0xFF9B6BFF,
+                      0xFFFF6B6B,
+                      0xFF34C759,
+                      0xFF4DA3FF,
+                      0xFF3FC380,
+                      0xFF5AC8FA,
+                      0xFFFFA23E,
+                      0xFF8E8E93
+              };
+              private RecyclerListView listView;
+              @Override
+              public View createView(Context context) {
+                  actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+                  actionBar.setAllowOverlayTitle(true);
+                  actionBar.setTitle("NGram");
+                  actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                      @Override
+                      public void onItemClick(int id) {
+                          if (id == -1) {
+                              finishFragment();
+                          }
+                      }
+                  });
+                  fragmentView = new FrameLayout(context);
+                  FrameLayout frameLayout = (FrameLayout) fragmentView;
+                  frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+                  listView = new RecyclerListView(context);
+                  listView.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false));
+                  listView.setVerticalScrollBarEnabled(false);
+                  listView.setAdapter(new ListAdapter());
+                  frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                  listView.setOnItemClickListener((view, position) -> {
+                      int index = position - 1;
+                      if (index < 0 || index >= TITLES.length) {
+                          return;
+                      }
+                      String title = TITLES[index];
+                      if ("Ghost mode".equals(title)) {
+                          presentFragment(new GhostPreferencesActivity());
+                      } else if ("Save deleted".equals(title)) {
+                          presentFragment(new NGSavePreferencesActivity());
+                      } else if ("Accounts".equals(title)) {
+                          presentFragment(new NGramAccountsActivity());
+                      } else if ("Local premium".equals(title)) {
+                          __PREMIUM__
+                      } else if ("Local banners".equals(title)) {
+                          __BANNERS__
+                      } else if ("Language".equals(title)) {
+                          showLanguage();
+                      } else {
+                          showSoon(index);
+                      }
+                  });
+                  return fragmentView;
+              }
+              private void showLanguage() {
+                  if (getParentActivity() == null) {
+                      return;
+                  }
+                  final String current = NGStr.getLanguage();
+                  AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                  builder.setTitle(NGStr.get(R.string.NGramLangTitle));
+                  builder.setItems(new CharSequence[]{
+                          ("ru".equals(current) ? "\\u2713 " : "") + "Русский",
+                          ("en".equals(current) ? "\\u2713 " : "") + "English"
+                  }, (dialog, which) -> {
+                      String lang = which == 0 ? "ru" : "en";
+                      if (!lang.equals(current)) {
+                          NGStr.setLanguage(lang);
+                          NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.reloadInterface);
+                      }
+                  });
+                  showDialog(builder.create());
+              }
+              private void showSoon(int index) {
+                  if (getParentActivity() == null || index < 0 || index >= TITLES.length) {
+                      return;
+                  }
+                  AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                  builder.setTitle(TITLES[index]);
+                  builder.setMessage("Этот раздел появится в следующем обновлении.");
+                  builder.setPositiveButton("OK", null);
+                  showDialog(builder.create());
+              }
+              private class ListAdapter extends RecyclerListView.SelectionAdapter {
+                  @NonNull
+                  @Override
+                  public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+                      View view;
+                      if (viewType == TYPE_HEADER) {
+                          view = new HeaderCell(getContext());
+                      } else {
+                          view = new TextCell(getContext());
+                      }
+                      view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                      return new RecyclerListView.Holder(view);
+                  }
+                  @Override
+                  public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+                      if (holder.getItemViewType() == TYPE_HEADER) {
+                          ((HeaderCell) holder.itemView).setText("Settings NGram");
+                      } else {
+                          int index = position - 1;
+                          ((TextCell) holder.itemView).setTextAndColorfulIcon(TITLES[index], ICONS[index], COLORS[index], index < TITLES.length - 1);
+                      }
+                  }
+                  @Override
+                  public int getItemCount() {
+                      return TITLES.length + 1;
+                  }
+                  @Override
+                  public boolean isEnabled(RecyclerView.ViewHolder holder) {
+                      return holder.getItemViewType() == TYPE_TEXT;
+                  }
+                  @Override
+                  public int getItemViewType(int position) {
+                      return position == 0 ? TYPE_HEADER : TYPE_TEXT;
+                  }
+              }
+              @Override
+              public boolean isSupportEdgeToEdge() {
+                  return true;
+              }
+              @Override
+              public void onInsets(int left, int top, int right, int bottom) {
+                  listView.setPadding(0, 0, 0, bottom);
+                  listView.setClipToPadding(false);
+              }
+          }
+          '''
+          MENU_SRC = MENU_SRC.replace("__PREMIUM__", premium).replace("__BANNERS__", banners)
+          cur = rd(MENU)
+          if "NGramAccountsActivity" in cur and '"Language"' in cur:
+              print("уже есть: меню NGram")
+          else:
+              if "TITLES" not in cur or "Ghost mode" not in cur:
+                  sys.exit("ANCHOR ERROR [меню NGram]: неожиданный файл " + MENU)
+              pending[MENU] = MENU_SRC
+              print("правка: меню NGram (Accounts, Language)")
+
+          # 5) NGTexts: русские и английские тексты без языковых ресурсов
+          prefixes = ("Ayu", "NGram", "NGSave", "NGAcc")
+          default_keys = {}
+          for n in sorted(os.listdir(RES + "/values")):
+              if n.endswith(".xml"):
+                  for k, v in re.findall(r'<string name="([^"]+)"[^>]*>(.*?)</string>', rd(RES + "/values/" + n), re.S):
+                      if k.startswith(prefixes):
+                          default_keys[k] = v
+          ru_texts = {}
+          if os.path.isdir(RES + "/values-ru"):
+              for n in sorted(os.listdir(RES + "/values-ru")):
+                  if n.endswith(".xml"):
+                      for k, v in re.findall(r'<string name="([^"]+)"[^>]*>(.*?)</string>', rd(RES + "/values-ru/" + n), re.S):
+                          ru_texts[k] = v
+
+
+          def unesc(t):
+              t = t.replace("\\'", "'").replace('\\"', '"').replace("\\n", "\n").replace("\\@", "@").replace("\\?", "?")
+              for a, b in (("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&apos;", "'"), ("&amp;", "&")):
+                  t = t.replace(a, b)
+              return t
+
+
+          def body(name, ru):
+              out = ["    private static String %s(int id) {" % name]
+              for k in sorted(default_keys):
+                  text = unesc(ru_texts.get(k, default_keys[k]) if ru else default_keys[k])
+                  out.append("        if (id == R.string.%s) {" % k)
+                  out.append("            return %s;" % json.dumps(text, ensure_ascii=True))
+                  out.append("        }")
+              out += ["        return null;", "    }"]
+              return out
+
+
+          lines = ["/* Сгенерировано workflow NGram 6: тексты NGram на русском и английском. */",
+                   "package com.radolyn.ayugram.ngsave;",
+                   "import org.telegram.messenger.R;",
+                   "public class NGTexts {",
+                   "    public static String find(int id) {",
+                   '        return "en".equals(NGStr.getLanguage()) ? findEn(id) : findRu(id);',
+                   "    }"]
+          lines += body("findRu", True) + body("findEn", False) + ["}", ""]
+          pending[NGTEXTS] = "\n".join(lines)
+          print("NGTexts: строк %d" % len(default_keys))
+
+          # запись только если все якоря найдены
+          for p, text in pending.items():
+              d = os.path.dirname(p)
+              if d:
+                  os.makedirs(d, exist_ok=True)
+              with open(p, "w", encoding="utf-8") as f:
+                  f.write(text)
+          print("NGram 6: все правки применены")
+          PYEOF
+          python3 /tmp/ng6_patch.py
+
+      - name: Commit and push
+        run: |
+          set -e
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Нечего коммитить"
+          else
+            git commit -m "NGram 6: свои правки, цитата удалённого, язык, Accounts, сессии"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            git push origin HEAD
+          fi

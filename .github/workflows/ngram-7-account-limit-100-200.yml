@@ -1,0 +1,116 @@
+name: NGram 7 - лимит аккаунтов 100 и 200
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Raise account limit
+        run: |
+          set -e
+          cat > /tmp/ng7_patch.py <<'PYEOF'
+          #!/usr/bin/env python3
+          # NGram 7: лимит аккаунтов 100 (обычный) и 200 (Premium)
+          import os, re, sys
+
+          DEFAULT_LIMIT = 100
+          MAX_LIMIT = 200
+          USERCONFIG = "TMessagesProj/src/main/java/org/telegram/messenger/UserConfig.java"
+          DEFINES = "TMessagesProj/jni/tgnet/Defines.h"
+          CM = "TMessagesProj/jni/tgnet/ConnectionsManager.cpp"
+          pending = {}
+
+
+          def rd(p):
+              if p not in pending:
+                  if not os.path.exists(p):
+                      sys.exit("ANCHOR ERROR: нет файла " + p)
+                  with open(p, encoding="utf-8") as f:
+                      pending[p] = f.read()
+              return pending[p]
+
+
+          def set_number(path, pattern, value, name):
+              # ровно одно совпадение, число подменяется на нужное
+              s = rd(path)
+              found = re.findall(pattern, s)
+              if len(found) != 1:
+                  sys.exit("ANCHOR ERROR [%s] в %s: найдено %d раз (нужно 1)" % (name, path, len(found)))
+              old = re.search(pattern, s).group(2)
+              pending[path] = re.sub(pattern, lambda m: m.group(1) + str(value) + m.group(3), s, count=1)
+              print("%s: было %s, стало %d" % (name, old, value))
+
+
+          # 1) Java: лимиты в UserConfig
+          set_number(USERCONFIG, r"(MAX_ACCOUNT_DEFAULT_COUNT\s*=\s*)(\d+)(\s*;)", DEFAULT_LIMIT, "UserConfig.MAX_ACCOUNT_DEFAULT_COUNT")
+          set_number(USERCONFIG, r"(\bMAX_ACCOUNT_COUNT\s*=\s*)(\d+)(\s*;)", MAX_LIMIT, "UserConfig.MAX_ACCOUNT_COUNT")
+
+          # 2) нативный максимум аккаунтов
+          set_number(DEFINES, r"(#define\s+MAX_ACCOUNT_COUNT\s+)(\d+)()", MAX_LIMIT, "Defines.h MAX_ACCOUNT_COUNT")
+
+          # 3) ConnectionsManager::getInstance: по одному case на аккаунт
+          s = rd(CM)
+          sig = "ConnectionsManager& ConnectionsManager::getInstance(int32_t instanceNum) {"
+          if s.count(sig) != 1:
+              sys.exit("ANCHOR ERROR [getInstance] в %s: найдено %d раз (нужно 1)" % (CM, s.count(sig)))
+          start = s.index(sig)
+          brace = s.index("{", start)
+          depth = 0
+          end = -1
+          for i in range(brace, len(s)):
+              c = s[i]
+              if c == "{":
+                  depth += 1
+              elif c == "}":
+                  depth -= 1
+                  if depth == 0:
+                      end = i + 1
+                      break
+          if end < 0:
+              sys.exit("ANCHOR ERROR [getInstance]: не найден конец функции")
+          body = [sig, "    switch (instanceNum) {"]
+          for a in range(MAX_LIMIT):
+              if a == MAX_LIMIT - 1:
+                  body.append("        case %d:" % a)
+                  body.append("        default:")
+              else:
+                  body.append("        case %d:" % a)
+              body.append("            static ConnectionsManager instance%d(%d);" % (a, a))
+              body.append("            return instance%d;" % a)
+          body += ["    }", "}"]
+          new_func = "\n".join(body)
+          if s[start:end] == new_func:
+              print("уже есть: getInstance на %d аккаунтов" % MAX_LIMIT)
+          else:
+              pending[CM] = s[:start] + new_func + s[end:]
+              print("getInstance: теперь %d вариантов case" % MAX_LIMIT)
+
+          # запись только если все якоря найдены
+          for p, text in pending.items():
+              with open(p, "w", encoding="utf-8") as f:
+                  f.write(text)
+          print("NGram 7: все правки применены")
+          PYEOF
+          python3 /tmp/ng7_patch.py
+
+      - name: Commit and push
+        run: |
+          set -e
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Нечего коммитить"
+          else
+            git commit -m "NGram 7: лимит аккаунтов 100 и 200"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            git push origin HEAD
+          fi
