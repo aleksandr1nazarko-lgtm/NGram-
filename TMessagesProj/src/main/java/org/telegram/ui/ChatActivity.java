@@ -14510,7 +14510,9 @@ public class ChatActivity extends BaseFragment implements
             if (messageObject == null || messageObject.messageOwner == null || messageObject.messageOwner.message == null) {
                 return null;
             }
-            return from(messageObject, 0, Math.min(MessagesController.getInstance(messageObject.currentAccount).quoteLengthMax, messageObject.messageOwner.message.length()));
+            String ngSrc = com.radolyn.ayugram.ngsave.NGSave.quoteText(messageObject.currentAccount, messageObject);
+            int ngLen = ngSrc != null ? ngSrc.length() : messageObject.messageOwner.message.length();
+            return from(messageObject, 0, Math.min(MessagesController.getInstance(messageObject.currentAccount).quoteLengthMax, ngLen));
         }
 
         public static ReplyQuote from(MessageObject messageObject, int start, int end) {
@@ -14548,11 +14550,12 @@ public class ChatActivity extends BaseFragment implements
                 this.answer = answer;
                 return true;
             } else {
-                if (end < start || end > message.messageOwner.message.length() || start > message.messageOwner.message.length() || start < 0 || end < 0) {
-                    FileLog.e("ReplyQuote: start/end are invalid (" + start + ", " + end + ", len=" + message.messageOwner.message.length() + ")");
+                final String ngOverride = com.radolyn.ayugram.ngsave.NGSave.quoteText(message.currentAccount, message);
+                final String fulltext = ngOverride != null ? ngOverride : message.messageOwner.message;
+                if (end < start || end > fulltext.length() || start > fulltext.length() || start < 0 || end < 0) {
+                    FileLog.e("ReplyQuote: start/end are invalid (" + start + ", " + end + ", len=" + fulltext.length() + ")");
                     return false;
                 }
-                final String fulltext = message.messageOwner.message;
                 int realStart = Math.max(0, start);
                 while (realStart < end && Character.isWhitespace(fulltext.charAt(realStart)))
                     realStart++;
@@ -14563,11 +14566,11 @@ public class ChatActivity extends BaseFragment implements
                     FileLog.e("ReplyQuote: message is full of whitespace");
                     return false;
                 }
-                text = message.messageOwner.message.substring(realStart, realEnd);
+                text = fulltext.substring(realStart, realEnd);
                 if (entities != null) {
                     entities.clear();
                 }
-                if (message.messageOwner.entities != null && !message.messageOwner.entities.isEmpty()) {
+                if (ngOverride == null && message.messageOwner.entities != null && !message.messageOwner.entities.isEmpty()) {
                     for (int i = 0; i < message.messageOwner.entities.size(); ++i) {
                         TLRPC.MessageEntity entity = message.messageOwner.entities.get(i);
                         if (!AndroidUtilities.intersect1dInclusive(realStart, realEnd, entity.offset, entity.offset + entity.length)) {

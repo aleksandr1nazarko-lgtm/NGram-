@@ -1,6 +1,6 @@
 /*
  * NGram settings section: list of NGram features.
- * Item names are intentionally in English, everything inside the screens is in Russian.
+ * Item names are intentionally in English, everything inside the screens follows the NGram language.
  */
 package com.radolyn.ayugram.ui.preferences;
 import android.content.Context;
@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.radolyn.ayugram.ngsave.NGSavePreferencesActivity;
 import com.radolyn.ayugram.ngsave.NGStr;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
@@ -27,24 +28,30 @@ public class NGramPreferencesActivity extends BaseFragment {
     private static final String[] TITLES = {
             "Ghost mode",
             "Save deleted",
+            "Accounts",
             "Local premium",
             "Local banners",
+            "Language",
             "Proxy",
             "Plugins"
     };
     private static final int[] ICONS = {
             R.drawable.ayu_ghost,
             R.drawable.msg_delete,
+            R.drawable.msg_accounts,
             R.drawable.msg_premium_prolfilestar,
             R.drawable.msg_gallery,
+            R.drawable.msg_language,
             R.drawable.msg_settings,
             R.drawable.msg_fave
     };
     private static final int[] COLORS = {
             0xFF9B6BFF,
             0xFFFF6B6B,
+            0xFF34C759,
             0xFF4DA3FF,
             0xFF3FC380,
+            0xFF5AC8FA,
             0xFFFFA23E,
             0xFF8E8E93
     };
@@ -72,19 +79,46 @@ public class NGramPreferencesActivity extends BaseFragment {
         frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         listView.setOnItemClickListener((view, position) -> {
             int index = position - 1;
-            if (index == 0) {
+            if (index < 0 || index >= TITLES.length) {
+                return;
+            }
+            String title = TITLES[index];
+            if ("Ghost mode".equals(title)) {
                 presentFragment(new GhostPreferencesActivity());
-            } else if (index == 1) {
+            } else if ("Save deleted".equals(title)) {
                 presentFragment(new NGSavePreferencesActivity());
-            } else if (index == 2) {
+            } else if ("Accounts".equals(title)) {
+                presentFragment(new NGramAccountsActivity());
+            } else if ("Local premium".equals(title)) {
                 presentFragment(new com.radolyn.ayugram.ngsave.NGLocalPremiumActivity());
-            } else if (index == 3) {
+            } else if ("Local banners".equals(title)) {
                 presentFragment(new com.radolyn.ayugram.ngsave.NGBannerSettingsActivity());
+            } else if ("Language".equals(title)) {
+                showLanguage();
             } else {
                 showSoon(index);
             }
         });
         return fragmentView;
+    }
+    private void showLanguage() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        final String current = NGStr.getLanguage();
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(NGStr.get(R.string.NGramLangTitle));
+        builder.setItems(new CharSequence[]{
+                ("ru".equals(current) ? "\u2713 " : "") + "Русский",
+                ("en".equals(current) ? "\u2713 " : "") + "English"
+        }, (dialog, which) -> {
+            String lang = which == 0 ? "ru" : "en";
+            if (!lang.equals(current)) {
+                NGStr.setLanguage(lang);
+                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.reloadInterface);
+            }
+        });
+        showDialog(builder.create());
     }
     private void showSoon(int index) {
         if (getParentActivity() == null || index < 0 || index >= TITLES.length) {

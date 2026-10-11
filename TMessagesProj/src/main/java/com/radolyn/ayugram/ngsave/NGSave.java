@@ -505,6 +505,49 @@ public class NGSave {
             FileLog.e(e);
         }
     }
+    /** Свои правки: старый текст сохраняется до отправки правки на сервер. */
+    public static void onOwnEdit(int account, MessageObject mo, String newText) {
+        try {
+            if (mo == null || mo.messageOwner == null) {
+                return;
+            }
+            TLRPC.Message old = mo.messageOwner;
+            TLRPC.Message fresh = new TLRPC.TL_message();
+            fresh.id = old.id;
+            fresh.media = old.media;
+            fresh.message = newText == null ? "" : newText;
+            fresh.edit_date = (int) (System.currentTimeMillis() / 1000);
+            onMessageEdited(account, mo.getDialogId(), old, fresh);
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
+    }
+
+    /** Текст для цитаты, если у помеченного удалённого сообщения нет своего текста. */
+    public static String quoteText(int account, MessageObject mo) {
+        try {
+            if (mo == null || mo.messageOwner == null) {
+                return null;
+            }
+            String current = mo.messageOwner.message;
+            if (current != null && !current.trim().isEmpty()) {
+                return null;
+            }
+            long dialogId = mo.getDialogId();
+            if (!isMarked(account, dialogId, mo.getId())) {
+                return null;
+            }
+            String last = NGSaveDb.getInstance().getLastEditText(account, dialogId, mo.getId());
+            if (last != null && !last.trim().isEmpty()) {
+                return last;
+            }
+            return NGStr.get(R.string.NGSaveDeletedMarker);
+        } catch (Throwable e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
     public static boolean hasEditHistory(int account, long dialogId, int mid) {
         try {
             return NGSaveDb.getInstance().hasEdits(account, dialogId, mid);

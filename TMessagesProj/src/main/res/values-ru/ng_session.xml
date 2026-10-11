@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="NGramAccHeader">Мои аккаунты</string>
+  <string name="NGramAccInfo">Нажмите на аккаунт, чтобы перейти в него. Долгое нажатие: переименовать, скачать сессию или удалить.</string>
+  <string name="NGramAccActive">Активный</string>
+  <string name="NGramAccInactive">Неактивный</string>
+  <string name="NGramAccRename">Переименовать</string>
+  <string name="NGramAccRenameTitle">Название аккаунта</string>
+  <string name="NGramAccRenameHint">Видно только на этом устройстве</string>
+  <string name="NGramAccDelete">Удалить аккаунт</string>
+  <string name="NGramAccDeleteMessage">Выйти из аккаунта {name}? Чтобы войти снова, понадобится код подтверждения.</string>
+  <string name="NGramExportSession">Скачать сессию</string>
+  <string name="NGramExportSessionFull">Сессия + сообщения</string>
+  <string name="NGramExportSessionOnly">Только сессия</string>
+  <string name="NGramExportDone">Сессия сохранена: {path}</string>
+  <string name="NGramExportAllSessions">Скачать все сессии</string>
+  <string name="NGramExportChoose">Что сохранить?</string>
+  <string name="NGramExportError">Не удалось сохранить сессию</string>
+  <string name="NGramExportWarnTitle">Берегите сессию</string>
+  <string name="NGramExportWarnMessage">Файл сессии даёт полный доступ к аккаунту. Не передавайте его никому и храните в безопасном месте.</string>
+  <string name="NGramImportSession">Импортировать сессию</string>
+  <string name="NGramImportNoSlot">Нет свободных слотов</string>
+  <string name="NGramImportRestart">Сессия импортирована. Приложение будет перезапущено.</string>
+  <string name="NGramImportBad">Это не файл сессии NGram</string>
+  <string name="NGramImportExists">Этот аккаунт уже добавлен</string>
+  <string name="NGramImportError">Не удалось импортировать сессию</string>
+  <string name="NGramRestartButton">Перезапустить</string>
+  <string name="NGramContinue">Продолжить</string>
+  <string name="NGramCancel">Отмена</string>
+  <string name="NGramSave">Сохранить</string>
+  <string name="NGramLangTitle">Язык NGram</string>
+</resources>

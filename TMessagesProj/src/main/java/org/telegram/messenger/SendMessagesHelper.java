@@ -3410,6 +3410,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         if (fragment == null || fragment.getParentActivity() == null) {
             return 0;
         }
+        com.radolyn.ayugram.ngsave.NGSave.onOwnEdit(currentAccount, messageObject, message);
 
         final TLRPC.TL_messages_editMessage req;
         if (messageObject.isEphemeral()) {

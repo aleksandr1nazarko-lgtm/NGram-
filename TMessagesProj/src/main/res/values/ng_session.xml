@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="NGramAccHeader">My accounts</string>
+  <string name="NGramAccInfo">Tap an account to switch to it. Long tap opens rename, session download and delete.</string>
+  <string name="NGramAccActive">Active</string>
+  <string name="NGramAccInactive">Inactive</string>
+  <string name="NGramAccRename">Rename</string>
+  <string name="NGramAccRenameTitle">Account name</string>
+  <string name="NGramAccRenameHint">Shown only on this device</string>
+  <string name="NGramAccDelete">Delete account</string>
+  <string name="NGramAccDeleteMessage">Log out of {name}? You will need a confirmation code to log in again.</string>
+  <string name="NGramExportSession">Download session</string>
+  <string name="NGramExportSessionFull">Session + messages</string>
+  <string name="NGramExportSessionOnly">Session only</string>
+  <string name="NGramExportDone">Session saved: {path}</string>
+  <string name="NGramExportAllSessions">Download all sessions</string>
+  <string name="NGramExportChoose">What to save?</string>
+  <string name="NGramExportError">Could not save the session</string>
+  <string name="NGramExportWarnTitle">Keep the session safe</string>
+  <string name="NGramExportWarnMessage">A session file gives full access to the account. Do not send it to anyone and store it in a safe place.</string>
+  <string name="NGramImportSession">Import session</string>
+  <string name="NGramImportNoSlot">No free slots</string>
+  <string name="NGramImportRestart">Session imported. The app will restart to apply it.</string>
+  <string name="NGramImportBad">This is not an NGram session file</string>
+  <string name="NGramImportExists">This account is already added</string>
+  <string name="NGramImportError">Could not import the session</string>
+  <string name="NGramRestartButton">Restart</string>
+  <string name="NGramContinue">Continue</string>
+  <string name="NGramCancel">Cancel</string>
+  <string name="NGramSave">Save</string>
+  <string name="NGramLangTitle">NGram language</string>
+</resources>
